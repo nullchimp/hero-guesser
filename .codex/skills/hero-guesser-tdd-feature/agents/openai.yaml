@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hero Guesser TDD Feature"
+  short_description: "TDD workflow for new features"
+  default_prompt: "Use $hero-guesser-tdd-feature to build the next feature through focused tests first."
