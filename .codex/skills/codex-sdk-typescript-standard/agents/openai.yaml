@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex SDK TypeScript Standard"
+  short_description: "Standards for Codex SDK work"
+  default_prompt: "Use $codex-sdk-typescript-standard when implementing or reviewing TypeScript code that uses the Codex SDK."
