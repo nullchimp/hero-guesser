@@ -1,24 +1,50 @@
 {
   "name": "hero-guesser",
-  "version": "1.0.0",
-  "description": "This is an App that guesses Super Hero/Villain names",
-  "main": "index.js",
+  "version": "0.1.0",
+  "description": "A Dockerized app that guesses superhero and villain names from clues.",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npm run build --workspaces --if-present",
+    "docker:test": "docker compose --profile test run --rm test",
+    "docker:up": "docker compose up --build",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nullchimp/hero-guesser.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "keywords": [
+    "codex",
+    "nestjs",
+    "vue",
+    "mysql",
+    "typescript"
+  ],
+  "author": "nullchimp",
   "bugs": {
     "url": "https://github.com/nullchimp/hero-guesser/issues"
   },
   "homepage": "https://github.com/nullchimp/hero-guesser#readme",
   "devDependencies": {
-    "@upstash/context7-mcp": "^2.2.5"
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@upstash/context7-mcp": "^2.2.5",
+    "eslint": "^9.39.1",
+    "eslint-plugin-vue": "^10.9.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.48.1",
+    "vue-eslint-parser": "^10.4.0"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=11.0.0"
   }
 }

@@ -1,1 +1,17 @@
 node_modules/
+.npm-cache/
+.docker-config/
+
+dist/
+coverage/
+.vite/
+
+.env
+.env.*
+!.env.example
+
+apps/api/src/generated/
+apps/api/prisma/generated/
+
+*.log
+.DS_Store
