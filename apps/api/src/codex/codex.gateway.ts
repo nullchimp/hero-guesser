@@ -1,215 +1,211 @@
-import { Injectable, ServiceUnavailableException } from "@nestjs/common";
-import { Codex, type ThreadEvent } from "@openai/codex-sdk";
+import {
+  BadGatewayException,
+  Inject,
+  Injectable,
+  Optional,
+  ServiceUnavailableException
+} from "@nestjs/common";
+import { Codex } from "@openai/codex-sdk";
 import { mkdir } from "node:fs/promises";
 import { AppConfigService } from "../config/app-config.service.js";
-import { buildHeroGuessPrompt } from "./hero-guess.prompt.js";
+import { GuessRecord, MessageRecord } from "../conversations/conversation.types.js";
+import { buildHeroGamePrompt } from "./hero-guess.prompt.js";
 
-export interface CodexStreamRequest {
+export type HeroGameMove =
+  | {
+      move: "question";
+      question: string;
+    }
+  | {
+      confidence: "low" | "medium" | "high";
+      move: "guess";
+      name: string;
+      rationale: string;
+      wikipediaSearchTitle: string;
+    };
+
+export interface CodexMoveRequest {
+  blockedGuessFeedback?: string;
   codexThreadId?: string | null;
-  clue: string;
+  forceQuestion?: boolean;
+  guesses?: GuessRecord[];
+  history: MessageRecord[];
+  maxQuestions: number;
   model: string;
+  questionsAsked: number;
 }
 
-export type CodexStreamEvent =
-  | { type: "thread"; threadId: string }
-  | { type: "sdk-event"; sdkType: string; message?: string }
-  | { type: "assistant-delta"; content: string }
-  | { type: "assistant-final"; content: string };
+export interface CodexMoveResult {
+  codexThreadId: string | null;
+  move: HeroGameMove;
+}
+
+export const heroMoveOutputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    confidence: {
+      enum: [
+        "none",
+        "low",
+        "medium",
+        "high"
+      ],
+      type: "string"
+    },
+    move: {
+      enum: [
+        "question",
+        "guess"
+      ],
+      type: "string"
+    },
+    name: {
+      type: "string"
+    },
+    question: {
+      type: "string"
+    },
+    rationale: {
+      type: "string"
+    },
+    wikipediaSearchTitle: {
+      type: "string"
+    }
+  },
+  required: [
+    "confidence",
+    "move",
+    "name",
+    "question",
+    "rationale",
+    "wikipediaSearchTitle"
+  ]
+} as const;
+
+export const CODEX_FACTORY = Symbol("CODEX_FACTORY");
+
+type CodexFactory = (options: { apiKey: string }) => CodexClient;
+
+interface CodexClient {
+  resumeThread(id: string, options?: unknown): CodexThread;
+  startThread(options?: unknown): CodexThread;
+}
 
 interface CodexThread {
   id: string | null;
-  run(input: string): Promise<{ finalResponse: string }>;
-  runStreamed(input: string): Promise<{ events: AsyncIterable<ThreadEvent> }>;
+  run(input: string, options?: { outputSchema: unknown }): Promise<{ finalResponse: string }>;
 }
 
 @Injectable()
 export class CodexGateway {
-  constructor(private readonly config: AppConfigService) {}
+  constructor(
+    private readonly config: AppConfigService,
+    @Optional()
+    @Inject(CODEX_FACTORY)
+    private readonly createCodex: CodexFactory = (options) => new Codex(options)
+  ) {}
 
-  async *streamGuess(request: CodexStreamRequest): AsyncGenerator<CodexStreamEvent> {
+  async requestMove(request: CodexMoveRequest): Promise<CodexMoveResult> {
     if (this.config.openAiApiKey.trim().length === 0) {
       throw new ServiceUnavailableException("OPENAI_API_KEY is not configured.");
     }
 
     await mkdir(this.config.codexWorkspace, { recursive: true });
 
-    const codex = new Codex({
+    const codex = this.createCodex({
       apiKey: this.config.openAiApiKey
     });
     const threadOptions = {
       model: request.model,
       networkAccessEnabled: false,
-      // The API container creates this isolated workspace only for Codex prompts.
       skipGitRepoCheck: true,
       workingDirectory: this.config.codexWorkspace
     };
-    const thread = (request.codexThreadId
+    const thread = request.codexThreadId
       ? codex.resumeThread(request.codexThreadId, threadOptions)
-      : codex.startThread(threadOptions)) as CodexThread;
+      : codex.startThread(threadOptions);
+    const prompt = buildHeroGamePrompt({
+      blockedGuessFeedback: request.blockedGuessFeedback,
+      forceQuestion: request.forceQuestion ?? false,
+      guesses: request.guesses ?? [],
+      maxQuestions: request.maxQuestions,
+      messages: request.history,
+      questionsAsked: request.questionsAsked
+    });
 
-    const prompt = buildHeroGuessPrompt(request.clue);
-    const streamedRun = await thread.runStreamed(prompt);
-    let finalContent = "";
-    let lastSdkErrorMessage: string | undefined;
-    let reportedThreadId = request.codexThreadId ?? undefined;
+    let turn: { finalResponse: string };
 
     try {
-      for await (const sdkEvent of streamedRun.events) {
-        const sdkType = sdkEvent.type;
-        const sdkErrorMessage = readSdkEventMessage(sdkEvent);
-
-        if (sdkErrorMessage !== undefined) {
-          lastSdkErrorMessage = sdkErrorMessage;
-        }
-
-        yield {
-          message: sdkErrorMessage,
-          type: "sdk-event",
-          sdkType
-        };
-
-        if (sdkEvent.type === "thread.started") {
-          reportedThreadId = sdkEvent.thread_id;
-
-          yield {
-            type: "thread",
-            threadId: sdkEvent.thread_id
-          };
-        }
-
-        if (sdkType === "turn.failed") {
-          const failureMessage = readFailureMessage(sdkEvent, lastSdkErrorMessage);
-
-          if (shouldRetryBuffered(failureMessage, finalContent)) {
-            yield* this.runBufferedFallback(thread, prompt, reportedThreadId);
-            return;
-          }
-
-          throw new ServiceUnavailableException(failureMessage);
-        }
-
-        const finalResponse = readAgentMessageText(sdkEvent);
-
-        if (finalResponse !== undefined && finalResponse !== finalContent) {
-          const delta = finalResponse.slice(finalContent.length);
-          finalContent = finalResponse;
-
-          if (delta.length > 0) {
-            yield {
-              type: "assistant-delta",
-              content: delta
-            };
-          }
-        }
-      }
+      turn = await thread.run(prompt, {
+        outputSchema: heroMoveOutputSchema
+      });
     } catch (error) {
-      const failureMessage = toErrorMessage(error);
-
-      if (shouldRetryBuffered(failureMessage, finalContent)) {
-        yield* this.runBufferedFallback(thread, prompt, reportedThreadId);
-        return;
-      }
-
-      throw error;
+      throw new ServiceUnavailableException(`Codex request failed: ${toErrorMessage(error)}`);
     }
 
-    yield {
-      type: "assistant-final",
-      content: finalContent
+    return {
+      codexThreadId: thread.id,
+      move: parseHeroGameMove(turn.finalResponse)
+    };
+  }
+}
+
+export function parseHeroGameMove(value: string): HeroGameMove {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new BadGatewayException("Codex returned an invalid game move.");
+  }
+
+  if (!isRecord(parsed) || typeof parsed.move !== "string") {
+    throw new BadGatewayException("Codex returned an invalid game move.");
+  }
+
+  if (parsed.move === "question") {
+    if (typeof parsed.question !== "string" || parsed.question.trim().length === 0) {
+      throw new BadGatewayException("Codex returned an invalid game move.");
+    }
+
+    return {
+      move: "question",
+      question: parsed.question.trim()
     };
   }
 
-  private async *runBufferedFallback(
-    thread: CodexThread,
-    prompt: string,
-    reportedThreadId: string | undefined
-  ): AsyncGenerator<CodexStreamEvent> {
-    yield {
-      message: "Streaming failed before any assistant text arrived; retrying with buffered Codex SDK run().",
-      type: "sdk-event",
-      sdkType: "fallback.started"
-    };
-
-    try {
-      const turn = await thread.run(prompt);
-
-      if (thread.id !== null && thread.id !== reportedThreadId) {
-        yield {
-          type: "thread",
-          threadId: thread.id
-        };
-      }
-
-      yield {
-        content: turn.finalResponse,
-        type: "assistant-delta"
-      };
-
-      yield {
-        content: turn.finalResponse,
-        type: "assistant-final"
-      };
-    } catch (error) {
-      throw new ServiceUnavailableException(
-        `Streaming failed and buffered fallback failed: ${toErrorMessage(error)}`
-      );
+  if (parsed.move === "guess") {
+    if (
+      !isConfidence(parsed.confidence) ||
+      typeof parsed.name !== "string" ||
+      parsed.name.trim().length === 0 ||
+      typeof parsed.rationale !== "string" ||
+      parsed.rationale.trim().length === 0 ||
+      typeof parsed.wikipediaSearchTitle !== "string" ||
+      parsed.wikipediaSearchTitle.trim().length === 0
+    ) {
+      throw new BadGatewayException("Codex returned an invalid game move.");
     }
-  }
-}
 
-export function readAgentMessageText(value: unknown): string | undefined {
-  const item = readRecord(value, "item");
-
-  if (readString(item, "type") !== "agent_message") {
-    return undefined;
-  }
-
-  return readString(item, "text");
-}
-
-export function readSdkEventMessage(value: unknown): string | undefined {
-  return (
-    readString(value, "message") ??
-    readString(readRecord(value, "error"), "message") ??
-    readString(readRecord(value, "item"), "message") ??
-    readString(readRecord(readRecord(value, "item"), "error"), "message")
-  );
-}
-
-function readFailureMessage(value: unknown, fallback: string | undefined): string {
-  return readSdkEventMessage(value) ?? fallback ?? "Codex turn failed.";
-}
-
-export function shouldRetryBuffered(message: string, currentContent: string): boolean {
-  const normalizedMessage = message.toLowerCase();
-
-  return (
-    currentContent.length === 0 &&
-    (
-      normalizedMessage.includes("stream disconnected before completion") ||
-      normalizedMessage.includes("error sending request for url")
-    )
-  );
-}
-
-function readRecord(value: unknown, property: string): Record<string, unknown> | undefined {
-  const record = toRecord(value);
-  const child = record?.[property];
-  return toRecord(child);
-}
-
-function readString(value: unknown, property: string): string | undefined {
-  const record = toRecord(value);
-  const child = record?.[property];
-  return typeof child === "string" ? child : undefined;
-}
-
-function toRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
+    return {
+      confidence: parsed.confidence,
+      move: "guess",
+      name: parsed.name.trim(),
+      rationale: parsed.rationale.trim(),
+      wikipediaSearchTitle: parsed.wikipediaSearchTitle.trim()
+    };
   }
 
-  return value as Record<string, unknown>;
+  throw new BadGatewayException("Codex returned an invalid game move.");
+}
+
+function isConfidence(value: unknown): value is "low" | "medium" | "high" {
+  return value === "low" || value === "medium" || value === "high";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function toErrorMessage(error: unknown): string {

@@ -18,14 +18,41 @@ enum MessageStatus {
   FAILED
 }
 
+enum MessageKind {
+  CHAT
+  ANSWER
+  QUESTION
+  GUESS
+}
+
+enum GameStatus {
+  ACTIVE
+  WON
+  LOST
+}
+
+enum GuessStatus {
+  PENDING
+  CORRECT
+  WRONG
+}
+
 model Conversation {
   id            String    @id @default(cuid())
   sessionId     String    @unique
+  ownerId       String?
   codexThreadId String?
   model         String
+  status        GameStatus @default(ACTIVE)
+  questionsAsked Int      @default(0)
+  completedAt   DateTime?
   messages      Message[]
+  guesses       Guess[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  @@index([ownerId, updatedAt])
+  @@index([status, model])
 }
 
 model Message {
@@ -33,12 +60,37 @@ model Message {
   conversationId String
   conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role           MessageRole
+  kind           MessageKind   @default(CHAT)
   content        String        @db.Text
   model          String?
   status         MessageStatus @default(COMPLETE)
   errorMessage   String?       @db.Text
+  guess          Guess?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   @@index([conversationId, createdAt])
+}
+
+model Guess {
+  id             String        @id @default(cuid())
+  conversationId String
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  messageId      String        @unique
+  message        Message       @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  name           String
+  confidence     String
+  rationale      String        @db.Text
+  status         GuessStatus   @default(PENDING)
+  articleTitle   String
+  articleUrl     String        @db.Text
+  articleExtract String        @db.Text
+  imageUrl       String        @db.Text
+  imageWidth     Int?
+  imageHeight    Int?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([conversationId, createdAt])
+  @@index([status])
 }

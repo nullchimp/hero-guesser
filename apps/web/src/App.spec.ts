@@ -1,27 +1,38 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
-import type { ConversationMessage, StreamEvent } from "./services/api";
+import type {
+  GameSession,
+  GuessRecord,
+  LeaderboardEntry,
+  SessionSummary
+} from "./services/api";
 
 const api = vi.hoisted(() => ({
-  fetchConversation: vi.fn(),
+  createSession: vi.fn(),
+  fetchLeaderboard: vi.fn(),
   fetchModels: vi.fn(),
-  getSessionId: vi.fn(),
-  sendMessageStream: vi.fn()
+  fetchSession: vi.fn(),
+  fetchSessions: vi.fn(),
+  getOwnerId: vi.fn(),
+  judgeGuess: vi.fn(),
+  submitAnswer: vi.fn()
 }));
 
 vi.mock("./services/api", () => api);
 
 describe("App", () => {
   beforeEach(() => {
-    api.fetchConversation.mockReset();
+    api.createSession.mockReset();
+    api.fetchLeaderboard.mockReset();
     api.fetchModels.mockReset();
-    api.getSessionId.mockReturnValue("browser-session-1");
-    api.sendMessageStream.mockReset();
+    api.fetchSession.mockReset();
+    api.fetchSessions.mockReset();
+    api.getOwnerId.mockReturnValue("browser-owner-1");
+    api.judgeGuess.mockReset();
+    api.submitAnswer.mockReset();
     Element.prototype.scrollIntoView = vi.fn();
-  });
 
-  it("loads persisted conversation history and server-configured models", async () => {
     api.fetchModels.mockResolvedValue({
       defaultModel: "gpt-5.3-codex",
       models: [
@@ -29,108 +40,217 @@ describe("App", () => {
         { id: "gpt-5.4-mini", label: "gpt-5.4-mini" }
       ]
     });
-    api.fetchConversation.mockResolvedValue({
+    api.fetchLeaderboard.mockResolvedValue({
+      leaderboard: []
+    });
+  });
+
+  it("loads server-backed sessions and the global model leaderboard", async () => {
+    api.fetchSessions.mockResolvedValue({
+      sessions: [
+        summary({
+          lastMessage: "Is your character from DC Comics?",
+          sessionId: "session-1"
+        })
+      ]
+    });
+    api.fetchSession.mockResolvedValue(session({
       messages: [
         message({
-          content: "Guess: Wonder Woman",
-          id: "message-1",
+          content: "Is your character from DC Comics?",
+          kind: "question",
+          role: "assistant"
+        })
+      ],
+      sessionId: "session-1"
+    }));
+    api.fetchLeaderboard.mockResolvedValue({
+      leaderboard: [
+        leaderboardEntry({
+          model: "gpt-5.4-mini",
+          rank: 1,
+          winRate: 1
+        })
+      ]
+    });
+
+    render(App);
+
+    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    expect(screen.getAllByText("gpt-5.4-mini").length).toBeGreaterThan(0);
+    expect(screen.getByText("100%")).not.toBeNull();
+  });
+
+  it("starts a new game with the selected model and renders answer buttons only", async () => {
+    api.fetchModels.mockResolvedValue({
+      defaultModel: "gpt-5.4-mini",
+      models: [
+        { id: "gpt-5.3-codex", label: "gpt-5.3-codex" },
+        { id: "gpt-5.4-mini", label: "gpt-5.4-mini" }
+      ]
+    });
+    api.fetchSessions.mockResolvedValue({
+      sessions: []
+    });
+    api.createSession.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "Is your character human?",
+          kind: "question",
           role: "assistant"
         })
       ],
       model: "gpt-5.4-mini",
-      sessionId: "browser-session-1"
-    });
+      questionsAsked: 1,
+      sessionId: "session-2"
+    }));
 
     render(App);
 
-    expect(await screen.findByText("Guess: Wonder Woman")).not.toBeNull();
-    expect(screen.getByLabelText<HTMLSelectElement>("Model").value).toBe("gpt-5.4-mini");
+    const newGameButton = screen.getByRole<HTMLButtonElement>("button", { name: "New Game" });
+    await waitFor(() => {
+      expect(newGameButton.disabled).toBe(false);
+    });
+    await fireEvent.click(newGameButton);
+
+    expect(await screen.findByText("Is your character human?")).not.toBeNull();
+    expect(await screen.findByRole("button", { name: "Yes" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "No" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Unknown" })).not.toBeNull();
+    expect(api.createSession).toHaveBeenCalledWith("browser-owner-1", "gpt-5.4-mini");
   });
 
-  it("submits a clue and renders streamed assistant output", async () => {
-    api.fetchModels.mockResolvedValue({
-      defaultModel: "gpt-5.3-codex",
-      models: [
-        { id: "gpt-5.3-codex", label: "gpt-5.3-codex" }
+  it("submits a judgment from a Wikipedia-backed guess card", async () => {
+    const guess = guessRecord({
+      name: "Batman"
+    });
+    api.fetchSessions.mockResolvedValue({
+      sessions: [
+        summary({
+          pendingGuessName: "Batman",
+          sessionId: "session-1"
+        })
       ]
     });
-    api.fetchConversation.mockResolvedValue({
-      messages: [],
-      model: "gpt-5.3-codex",
-      sessionId: "browser-session-1"
-    });
-    api.sendMessageStream.mockImplementation(
-      async (
-        _sessionId: string,
-        _content: string,
-        _model: string,
-        onEvent: (event: StreamEvent) => void
-      ) => {
-        onEvent({
-          message: message({
-            content: "Fast scarlet speedster",
-            id: "message-1",
-            role: "user"
-          }),
-          type: "user-message"
-        });
-        onEvent({
-          message: message({
-            content: "",
-            id: "message-2",
-            role: "assistant",
-            status: "streaming"
-          }),
-          type: "assistant-message-start"
-        });
-        onEvent({
-          content: "Guess: The Flash",
-          type: "assistant-delta"
-        });
-        onEvent({
-          message: message({
-            content: "Guess: The Flash",
-            id: "message-2",
-            role: "assistant"
-          }),
-          type: "assistant-message-complete"
-        });
-      }
-    );
+    api.fetchSession.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "The answers point to Batman.",
+          guess,
+          kind: "guess",
+          role: "assistant"
+        })
+      ],
+      sessionId: "session-1"
+    }));
+    api.judgeGuess.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "The answers point to Batman.",
+          guess: {
+            ...guess,
+            status: "correct"
+          },
+          kind: "guess",
+          role: "assistant"
+        })
+      ],
+      sessionId: "session-1",
+      status: "won"
+    }));
 
     render(App);
 
-    await screen.findByText("Ready for a clue.");
-    await fireEvent.update(screen.getByLabelText("Clue"), "Fast scarlet speedster");
-    await fireEvent.click(screen.getByRole("button", { name: "Guess" }));
+    expect(await screen.findByText("Batman on Wikipedia")).not.toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Correct" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Guess: The Flash")).not.toBeNull();
+      expect(api.judgeGuess).toHaveBeenCalledWith(
+        "browser-owner-1",
+        "session-1",
+        "guess-1",
+        "correct"
+      );
     });
-    expect(api.sendMessageStream).toHaveBeenCalledWith(
-      "browser-session-1",
-      "Fast scarlet speedster",
-      "gpt-5.3-codex",
-      expect.any(Function)
-    );
+    expect(await screen.findByText("The model won this round.")).not.toBeNull();
   });
 });
 
-function message(overrides: Partial<ConversationMessage>): ConversationMessage {
+function session(overrides: Partial<GameSession> = {}): GameSession {
   return {
-    ...baseMessage(),
+    completedAt: null,
+    createdAt: "2026-05-15T12:00:00.000Z",
+    guesses: [],
+    maxQuestions: 10,
+    messages: [],
+    model: "gpt-5.3-codex",
+    ownerId: "browser-owner-1",
+    questionsAsked: 0,
+    sessionId: "session-1",
+    status: "active",
+    updatedAt: "2026-05-15T12:00:00.000Z",
     ...overrides
   };
 }
 
-function baseMessage(): ConversationMessage {
+function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    completedAt: null,
+    createdAt: "2026-05-15T12:00:00.000Z",
+    lastMessage: null,
+    maxQuestions: 10,
+    model: "gpt-5.3-codex",
+    pendingGuessName: null,
+    questionsAsked: 0,
+    sessionId: "session-1",
+    status: "active",
+    updatedAt: "2026-05-15T12:00:00.000Z",
+    ...overrides
+  };
+}
+
+function message(overrides: Partial<GameSession["messages"][number]> = {}): GameSession["messages"][number] {
   return {
     content: "",
-    createdAt: "2026-05-14T12:00:00.000Z",
+    createdAt: "2026-05-15T12:00:00.000Z",
     errorMessage: null,
-    id: "message",
+    guess: null,
+    id: "message-1",
+    kind: "question",
     model: "gpt-5.3-codex",
-    role: "assistant" as const,
-    status: "complete" as const
+    role: "assistant",
+    status: "complete",
+    ...overrides
+  };
+}
+
+function guessRecord(overrides: Partial<GuessRecord> = {}): GuessRecord {
+  return {
+    articleExtract: "Batman is a superhero who appears in American comic books.",
+    articleTitle: "Batman",
+    articleUrl: "https://en.wikipedia.org/wiki/Batman",
+    confidence: "high",
+    createdAt: "2026-05-15T12:00:00.000Z",
+    id: "guess-1",
+    imageHeight: 406,
+    imageUrl: "https://upload.wikimedia.org/Batman.jpg",
+    imageWidth: 245,
+    name: "Batman",
+    rationale: "The answers point to Batman.",
+    status: "pending",
+    ...overrides
+  };
+}
+
+function leaderboardEntry(overrides: Partial<LeaderboardEntry> = {}): LeaderboardEntry {
+  return {
+    averageQuestionsToWin: 5,
+    games: 1,
+    losses: 0,
+    model: "gpt-5.3-codex",
+    rank: 1,
+    winRate: 1,
+    wins: 1,
+    ...overrides
   };
 }

@@ -4,18 +4,14 @@ import {
   Controller,
   Get,
   Headers,
-  HttpCode,
-  Post,
-  Res
+  Param,
+  Post
 } from "@nestjs/common";
-import type { Response } from "express";
 import { ModelCatalog } from "../config/model-catalog.service.js";
-import { SendMessageDto } from "./dto/send-message.dto.js";
-import { ConversationService, serializeMessage } from "./conversation.service.js";
-import {
-  ConversationResponse,
-  ConversationStreamEvent
-} from "./conversation.types.js";
+import { ConversationService } from "./conversation.service.js";
+import { CreateSessionDto } from "./dto/create-session.dto.js";
+import { JudgeGuessDto } from "./dto/judge-guess.dto.js";
+import { SubmitAnswerDto } from "./dto/submit-answer.dto.js";
 
 @Controller()
 export class ConversationsController {
@@ -29,93 +25,77 @@ export class ConversationsController {
     return this.modelCatalog.list();
   }
 
-  @Get("conversation")
-  async getConversation(
-    @Headers("x-hero-session-id") sessionId: string | undefined
-  ): Promise<Record<string, unknown>> {
-    const conversation = await this.conversations.getConversation(readSessionId(sessionId));
-    return serializeConversation(conversation);
+  @Get("leaderboard")
+  async getLeaderboard(): ReturnType<ConversationService["getLeaderboardResponse"]> {
+    return this.conversations.getLeaderboardResponse();
   }
 
-  @Post("conversation/messages")
-  @HttpCode(200)
-  async postMessage(
-    @Headers("x-hero-session-id") sessionId: string | undefined,
-    @Body() dto: SendMessageDto,
-    @Res() response: Response
-  ): Promise<void> {
-    response.status(200);
-    response.setHeader("Cache-Control", "no-cache, no-transform");
-    response.setHeader("Connection", "keep-alive");
-    response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    response.setHeader("X-Accel-Buffering", "no");
-    response.flushHeaders();
+  @Get("sessions")
+  async listSessions(
+    @Headers("x-hero-owner-id") ownerId: string | undefined
+  ): ReturnType<ConversationService["listSessions"]> {
+    return this.conversations.listSessions({
+      ownerId: readOwnerId(ownerId)
+    });
+  }
 
-    try {
-      for await (const event of this.conversations.sendMessage({
-        content: dto.content,
-        model: dto.model,
-        sessionId: readSessionId(sessionId)
-      })) {
-        writeSse(response, event.type, serializeStreamEvent(event));
-      }
-    } catch (error) {
-      writeSse(response, "error", {
-        error: error instanceof Error ? error.message : "Request failed.",
-        type: "error"
-      });
-    } finally {
-      response.end();
-    }
+  @Post("sessions")
+  async createSession(
+    @Headers("x-hero-owner-id") ownerId: string | undefined,
+    @Body() dto: CreateSessionDto
+  ): ReturnType<ConversationService["startSession"]> {
+    return this.conversations.startSession({
+      model: dto.model,
+      ownerId: readOwnerId(ownerId)
+    });
+  }
+
+  @Get("sessions/:sessionId")
+  async getSession(
+    @Headers("x-hero-owner-id") ownerId: string | undefined,
+    @Param("sessionId") sessionId: string
+  ): ReturnType<ConversationService["getSession"]> {
+    return this.conversations.getSession({
+      ownerId: readOwnerId(ownerId),
+      sessionId
+    });
+  }
+
+  @Post("sessions/:sessionId/answers")
+  async submitAnswer(
+    @Headers("x-hero-owner-id") ownerId: string | undefined,
+    @Param("sessionId") sessionId: string,
+    @Body() dto: SubmitAnswerDto
+  ): ReturnType<ConversationService["submitAnswer"]> {
+    return this.conversations.submitAnswer({
+      answer: dto.answer,
+      ownerId: readOwnerId(ownerId),
+      sessionId
+    });
+  }
+
+  @Post("sessions/:sessionId/guesses/:guessId/judgment")
+  async judgeGuess(
+    @Headers("x-hero-owner-id") ownerId: string | undefined,
+    @Param("sessionId") sessionId: string,
+    @Param("guessId") guessId: string,
+    @Body() dto: JudgeGuessDto
+  ): ReturnType<ConversationService["judgeGuess"]> {
+    return this.conversations.judgeGuess({
+      guessId,
+      ownerId: readOwnerId(ownerId),
+      sessionId,
+      verdict: dto.verdict
+    });
   }
 }
 
-function readSessionId(sessionId: string | undefined): string {
-  const normalizedSessionId = sessionId?.trim();
+function readOwnerId(ownerId: string | undefined): string {
+  const normalizedOwnerId = ownerId?.trim();
 
-  if (!normalizedSessionId) {
-    throw new BadRequestException("Missing X-Hero-Session-Id header.");
+  if (!normalizedOwnerId) {
+    throw new BadRequestException("Missing X-Hero-Owner-Id header.");
   }
 
-  return normalizedSessionId;
-}
-
-function serializeConversation(conversation: ConversationResponse): Record<string, unknown> {
-  return {
-    messages: conversation.messages.map(serializeMessage),
-    model: conversation.model,
-    sessionId: conversation.sessionId
-  };
-}
-
-function serializeStreamEvent(event: ConversationStreamEvent): Record<string, unknown> {
-  if (
-    event.type === "user-message" ||
-    event.type === "assistant-message-start" ||
-    event.type === "assistant-message-complete" ||
-    event.type === "error"
-  ) {
-    return {
-      ...event,
-      message: event.message === undefined ? undefined : serializeMessage(event.message)
-    };
-  }
-
-  if (event.type === "assistant-delta") {
-    return {
-      content: event.content,
-      type: event.type
-    };
-  }
-
-  return {
-    message: event.message,
-    sdkType: event.sdkType,
-    type: event.type
-  };
-}
-
-function writeSse(response: Response, event: string, data: Record<string, unknown>): void {
-  response.write(`event: ${event}\n`);
-  response.write(`data: ${JSON.stringify(data)}\n\n`);
+  return normalizedOwnerId;
 }

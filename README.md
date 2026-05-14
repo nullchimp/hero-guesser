@@ -1,6 +1,6 @@
 # Hero Guesser
 
-Hero Guesser is a small Dockerized chat app that guesses superhero or villain names from user clues. It uses Vue, NestJS, MySQL, Prisma, and the OpenAI Codex SDK.
+Hero Guesser is a small Dockerized game app where the player silently thinks of a superhero or villain and a selected Codex model tries to guess the character. It uses Vue, NestJS, MySQL, Prisma, Wikipedia metadata, and the OpenAI Codex SDK.
 
 ## Requirements
 
@@ -29,6 +29,18 @@ The application is designed to run through Docker Compose. Local Node commands a
 
 MySQL data is stored in the `hero-guesser-mysql` Docker volume, so conversation history survives container restarts.
 
+The API container runs Prisma migrations on startup. If you need to apply migrations manually while using Docker, run them inside the Compose network:
+
+```sh
+npm run docker:migrate
+```
+
+If the API container is already running and built from the current code, this also works:
+
+```sh
+docker compose exec api npm run prisma:migrate -w @hero-guesser/api
+```
+
 ## Configuration
 
 - `OPENAI_API_KEY`: server-side key used by the Codex SDK.
@@ -36,6 +48,15 @@ MySQL data is stored in the `hero-guesser-mysql` Docker volume, so conversation 
 - `MODEL_ALLOWLIST`: comma-separated list exposed to the frontend model picker.
 - `DATABASE_URL`: MySQL connection string used by Prisma.
 - `CODEX_WORKSPACE`: controlled workspace path used by Codex SDK runs inside the API container.
+- `WIKIPEDIA_USER_AGENT`: user-agent string sent by the API when looking up English Wikipedia articles and images for model guesses.
+
+## Gameplay
+
+- Start a new session, think of a hero or villain, and answer the model's questions with only Yes, No, or Unknown.
+- Each model gets up to 10 questions. Guesses do not consume the question budget.
+- A guess is shown with a specific English Wikipedia article, summary, and lead image when the app can verify a character-specific page.
+- Mark guesses Correct or Wrong. A wrong guess continues the session while questions remain; after 10 questions, a wrong guess records a loss.
+- The global leaderboard ranks models by win rate, then by fewer average questions on wins.
 
 ## Development Checks
 
@@ -49,7 +70,7 @@ This installs dependencies in a disposable test container, generates the Prisma 
 
 ## Open Source Notes
 
-Hero Guesser does not ship copyrighted character art, logos, wiki dumps, or proprietary datasets. User prompts and model outputs are stored as conversation history in the configured MySQL database.
+Hero Guesser does not ship copyrighted character art, logos, wiki dumps, or proprietary datasets. Wikipedia summaries and image URLs are fetched live and stored as attribution-friendly links to the source article, while remote images are displayed from Wikimedia rather than committed to the repository. User sessions, answers, guesses, and judgments are stored in the configured MySQL database.
 
 ## License
 

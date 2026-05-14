@@ -28,6 +28,10 @@ export class AppConfigService {
     return this.getString("OPENAI_API_KEY");
   }
 
+  get wikipediaUserAgent(): string {
+    return this.getString("WIKIPEDIA_USER_AGENT");
+  }
+
   private getString(name: string): string {
     const value = this.configService.get<string>(name);
 

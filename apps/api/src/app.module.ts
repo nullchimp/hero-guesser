@@ -16,7 +16,10 @@ import { PrismaModule } from "./prisma/prisma.module.js";
         DEFAULT_MODEL: Joi.string().default("gpt-5.3-codex"),
         MODEL_ALLOWLIST: Joi.string().default("gpt-5.3-codex,gpt-5.4,gpt-5.4-mini"),
         OPENAI_API_KEY: Joi.string().allow("").default(""),
-        PORT: Joi.number().port().default(3000)
+        PORT: Joi.number().port().default(3000),
+        WIKIPEDIA_USER_AGENT: Joi.string().default(
+          "HeroGuesser/0.1 (https://github.com/nullchimp/hero-guesser)"
+        )
       })
     }),
     AppConfigModule,

@@ -14,91 +14,257 @@
             <h1 id="app-title">
               Hero Guesser
             </h1>
-            <p>{{ sessionLabel }}</p>
+            <p>{{ ownerLabel }}</p>
           </div>
         </div>
 
-        <label class="model-picker">
-          <span>Model</span>
-          <select
-            v-model="selectedModel"
-            :disabled="isLoading || isSending"
-          >
-            <option
-              v-for="model in models"
-              :key="model.id"
-              :value="model.id"
+        <div class="topbar-actions">
+          <label class="model-picker">
+            <span>Model for new games</span>
+            <select
+              v-model="selectedModel"
+              :disabled="isBusy"
             >
-              {{ model.label }}
-            </option>
-          </select>
-        </label>
-      </header>
-
-      <section
-        class="conversation"
-        aria-live="polite"
-        aria-label="Conversation history"
-      >
-        <p
-          v-if="isLoading"
-          class="state-line"
-        >
-          Loading conversation...
-        </p>
-        <p
-          v-else-if="messages.length === 0"
-          class="state-line"
-        >
-          Ready for a clue.
-        </p>
-
-        <article
-          v-for="message in messages"
-          :key="message.id"
-          class="message"
-          :class="[`message--${message.role}`, `message--${message.status}`]"
-        >
-          <div class="message-meta">
-            <span>{{ message.role === "user" ? "You" : "Hero Guesser" }}</span>
-            <time :datetime="message.createdAt">{{ formatTime(message.createdAt) }}</time>
-          </div>
-          <p>{{ message.content || "Thinking..." }}</p>
-          <small v-if="message.errorMessage">{{ message.errorMessage }}</small>
-        </article>
-
-        <div
-          ref="messagesEnd"
-          aria-hidden="true"
-        />
-      </section>
-
-      <form
-        class="composer"
-        @submit.prevent="submitMessage"
-      >
-        <label for="clue">Clue</label>
-        <textarea
-          id="clue"
-          v-model="draft"
-          :disabled="isLoading || isSending"
-          maxlength="4000"
-          placeholder="Billionaire detective in a cape"
-          rows="3"
-          @keydown.enter.exact.prevent="submitMessage"
-        />
-        <div class="composer-actions">
-          <p role="status">
-            {{ statusText }}
-          </p>
+              <option
+                v-for="model in models"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.label }}
+              </option>
+            </select>
+          </label>
           <button
-            type="submit"
-            :disabled="!canSubmit"
+            class="primary-action"
+            type="button"
+            :disabled="!canStartGame"
+            @click="startGame"
           >
-            Guess
+            New Game
           </button>
         </div>
-      </form>
+      </header>
+
+      <div class="game-layout">
+        <aside
+          class="sidebar"
+          aria-label="Saved sessions"
+        >
+          <div class="panel-heading">
+            <h2>Sessions</h2>
+            <span>{{ sessions.length }}</span>
+          </div>
+          <p
+            v-if="sessions.length === 0"
+            class="empty-line"
+          >
+            No saved games yet.
+          </p>
+          <button
+            v-for="session in sessions"
+            :key="session.sessionId"
+            class="session-row"
+            :class="{ 'session-row--active': session.sessionId === activeSession?.sessionId }"
+            type="button"
+            :disabled="isBusy"
+            @click="selectSession(session.sessionId)"
+          >
+            <span>{{ session.model }}</span>
+            <strong>{{ formatStatus(session.status) }}</strong>
+            <small>{{ session.questionsAsked }}/{{ session.maxQuestions }} questions</small>
+            <small v-if="session.pendingGuessName">Guess: {{ session.pendingGuessName }}</small>
+            <small v-else-if="session.lastMessage">{{ session.lastMessage }}</small>
+          </button>
+        </aside>
+
+        <section
+          class="play-area"
+          aria-live="polite"
+        >
+          <p
+            v-if="errorMessage"
+            class="error-line"
+            role="alert"
+          >
+            {{ errorMessage }}
+          </p>
+
+          <div
+            v-if="isLoading"
+            class="state-block"
+          >
+            Loading games...
+          </div>
+
+          <div
+            v-else-if="activeSession === null"
+            class="state-block"
+          >
+            Think of a hero or villain, choose a model, and start a game.
+          </div>
+
+          <template v-else>
+            <header class="session-header">
+              <div>
+                <p class="eyebrow">
+                  {{ activeSession.model }}
+                </p>
+                <h2>{{ formatStatus(activeSession.status) }}</h2>
+              </div>
+              <div class="question-meter">
+                <span>{{ activeSession.questionsAsked }}</span>
+                <small>of {{ activeSession.maxQuestions }} questions</small>
+              </div>
+            </header>
+
+            <section
+              class="messages"
+              aria-label="Game history"
+            >
+              <article
+                v-for="message in activeSession.messages"
+                :key="message.id"
+                class="message"
+                :class="[`message--${message.role}`, `message--${message.kind}`]"
+              >
+                <div class="message-meta">
+                  <span>{{ messageLabel(message) }}</span>
+                  <time :datetime="message.createdAt">{{ formatTime(message.createdAt) }}</time>
+                </div>
+
+                <template v-if="message.kind === 'guess' && message.guess !== null">
+                  <div class="guess-card">
+                    <img
+                      :src="message.guess.imageUrl"
+                      :alt="message.guess.articleTitle"
+                    >
+                    <div class="guess-body">
+                      <div class="guess-title">
+                        <h3>{{ message.guess.name }}</h3>
+                        <span>{{ message.guess.confidence }} confidence</span>
+                      </div>
+                      <p>{{ message.guess.rationale }}</p>
+                      <p>{{ message.guess.articleExtract }}</p>
+                      <a
+                        :href="message.guess.articleUrl"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {{ message.guess.articleTitle }} on Wikipedia
+                      </a>
+                      <div
+                        v-if="message.guess.status === 'pending' && activeSession.status === 'active'"
+                        class="judgment-actions"
+                      >
+                        <button
+                          type="button"
+                          :disabled="isBusy"
+                          @click="judge(message.guess.id, 'correct')"
+                        >
+                          Correct
+                        </button>
+                        <button
+                          type="button"
+                          :disabled="isBusy"
+                          @click="judge(message.guess.id, 'wrong')"
+                        >
+                          Wrong
+                        </button>
+                      </div>
+                      <small v-else>Marked {{ message.guess.status }}</small>
+                    </div>
+                  </div>
+                </template>
+
+                <p v-else>
+                  {{ message.content }}
+                </p>
+              </article>
+              <div
+                ref="scrollAnchor"
+                aria-hidden="true"
+              />
+            </section>
+
+            <div class="answer-bar">
+              <template v-if="isBusy">
+                <p role="status">
+                  Thinking...
+                </p>
+              </template>
+              <template v-else-if="canAnswer">
+                <button
+                  type="button"
+                  @click="answer('yes')"
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  @click="answer('no')"
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  @click="answer('unknown')"
+                >
+                  Unknown
+                </button>
+              </template>
+              <p
+                v-else-if="pendingGuess"
+                role="status"
+              >
+                Judge the current guess.
+              </p>
+              <p
+                v-else
+                role="status"
+              >
+                {{ completionText }}
+              </p>
+            </div>
+          </template>
+        </section>
+
+        <aside
+          class="leaderboard"
+          aria-label="Model leaderboard"
+        >
+          <div class="panel-heading">
+            <h2>Leaderboard</h2>
+            <span>{{ leaderboard.length }}</span>
+          </div>
+          <p
+            v-if="leaderboard.length === 0"
+            class="empty-line"
+          >
+            Completed games will appear here.
+          </p>
+          <table v-else>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Model</th>
+                <th>Win</th>
+                <th>Avg</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="entry in leaderboard"
+                :key="entry.model"
+              >
+                <td>{{ entry.rank }}</td>
+                <td>{{ entry.model }}</td>
+                <td>{{ formatPercent(entry.winRate) }}</td>
+                <td>{{ formatAverage(entry.averageQuestionsToWin) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </aside>
+      </div>
     </section>
   </main>
 </template>
@@ -107,48 +273,73 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   ConversationMessage,
+  GameSession,
+  GuessVerdict,
+  LeaderboardEntry,
   ModelOption,
-  StreamEvent,
-  fetchConversation,
+  PlayerAnswer,
+  SessionSummary,
+  createSession,
+  fetchLeaderboard,
   fetchModels,
-  getSessionId,
-  sendMessageStream
+  fetchSession,
+  fetchSessions,
+  getOwnerId,
+  judgeGuess,
+  submitAnswer
 } from "./services/api";
 
-const sessionId = getSessionId();
+const ownerId = getOwnerId();
 const models = ref<ModelOption[]>([]);
 const selectedModel = ref("");
-const messages = ref<ConversationMessage[]>([]);
-const draft = ref("");
+const sessions = ref<SessionSummary[]>([]);
+const activeSession = ref<GameSession | null>(null);
+const leaderboard = ref<LeaderboardEntry[]>([]);
 const isLoading = ref(true);
-const isSending = ref(false);
+const isBusy = ref(false);
 const errorMessage = ref("");
-const messagesEnd = ref<HTMLDivElement | null>(null);
+const scrollAnchor = ref<HTMLDivElement | null>(null);
 
-const sessionLabel = computed(() => `Session ${sessionId.slice(0, 8)}`);
-const canSubmit = computed(() => draft.value.trim().length > 0 && !isLoading.value && !isSending.value);
-const statusText = computed(() => {
-  if (errorMessage.value.length > 0) {
-    return errorMessage.value;
+const ownerLabel = computed(() => `Player ${ownerId.slice(0, 8)}`);
+const canStartGame = computed(() => selectedModel.value.length > 0 && !isLoading.value && !isBusy.value);
+const pendingGuess = computed(() => activeSession.value?.messages.find(
+  (message) => message.guess?.status === "pending"
+)?.guess ?? null);
+const canAnswer = computed(() => {
+  if (activeSession.value === null || activeSession.value.status !== "active" || pendingGuess.value !== null) {
+    return false;
   }
 
-  if (isSending.value) {
-    return "Guessing...";
+  return activeSession.value.messages.at(-1)?.kind === "question";
+});
+const completionText = computed(() => {
+  if (activeSession.value?.status === "won") {
+    return "The model won this round.";
   }
 
-  return `${messages.value.length} saved messages`;
+  if (activeSession.value?.status === "lost") {
+    return "The model ran out of guesses.";
+  }
+
+  return "Waiting for the next move.";
 });
 
 onMounted(async () => {
   try {
-    const [modelResponse, conversation] = await Promise.all([
-      fetchModels(sessionId),
-      fetchConversation(sessionId)
+    const [modelResponse, sessionResponse, leaderboardResponse] = await Promise.all([
+      fetchModels(ownerId),
+      fetchSessions(ownerId),
+      fetchLeaderboard(ownerId)
     ]);
 
     models.value = modelResponse.models;
-    selectedModel.value = conversation.model || modelResponse.defaultModel;
-    messages.value = conversation.messages;
+    selectedModel.value = modelResponse.defaultModel;
+    sessions.value = sessionResponse.sessions;
+    leaderboard.value = leaderboardResponse.leaderboard;
+
+    if (sessions.value.length > 0) {
+      activeSession.value = await fetchSession(ownerId, sessions.value[0].sessionId);
+    }
   } catch (error) {
     errorMessage.value = toErrorMessage(error);
   } finally {
@@ -157,84 +348,98 @@ onMounted(async () => {
 });
 
 watch(
-  messages,
+  activeSession,
   async () => {
     await nextTick();
-    messagesEnd.value?.scrollIntoView({ behavior: "smooth", block: "end" });
+    scrollAnchor.value?.scrollIntoView({ behavior: "smooth", block: "end" });
   },
   { deep: true }
 );
 
-async function submitMessage(): Promise<void> {
-  if (!canSubmit.value) {
+async function startGame(): Promise<void> {
+  await runAction(async () => {
+    activeSession.value = await createSession(ownerId, selectedModel.value);
+    await refreshLists();
+  });
+}
+
+async function selectSession(sessionId: string): Promise<void> {
+  await runAction(async () => {
+    activeSession.value = await fetchSession(ownerId, sessionId);
+  });
+}
+
+async function answer(value: PlayerAnswer): Promise<void> {
+  const sessionId = activeSession.value?.sessionId;
+
+  if (sessionId === undefined) {
     return;
   }
 
-  const content = draft.value.trim();
-  draft.value = "";
+  await runAction(async () => {
+    activeSession.value = await submitAnswer(ownerId, sessionId, value);
+    await refreshLists();
+  });
+}
+
+async function judge(guessId: string, verdict: GuessVerdict): Promise<void> {
+  const sessionId = activeSession.value?.sessionId;
+
+  if (sessionId === undefined) {
+    return;
+  }
+
+  await runAction(async () => {
+    activeSession.value = await judgeGuess(ownerId, sessionId, guessId, verdict);
+    await refreshLists();
+  });
+}
+
+async function refreshLists(): Promise<void> {
+  const [sessionResponse, leaderboardResponse] = await Promise.all([
+    fetchSessions(ownerId),
+    fetchLeaderboard(ownerId)
+  ]);
+
+  sessions.value = sessionResponse.sessions;
+  leaderboard.value = leaderboardResponse.leaderboard;
+}
+
+async function runAction(action: () => Promise<void>): Promise<void> {
   errorMessage.value = "";
-  isSending.value = true;
+  isBusy.value = true;
 
   try {
-    await sendMessageStream(sessionId, content, selectedModel.value, handleStreamEvent);
+    await action();
   } catch (error) {
     errorMessage.value = toErrorMessage(error);
   } finally {
-    isSending.value = false;
+    isBusy.value = false;
   }
 }
 
-function handleStreamEvent(event: StreamEvent): void {
-  if (event.type === "user-message" || event.type === "assistant-message-start") {
-    upsertMessage(event.message);
-    return;
+function messageLabel(message: ConversationMessage): string {
+  if (message.kind === "answer") {
+    return "You";
   }
 
-  if (event.type === "assistant-delta") {
-    appendAssistantDelta(event.content);
-    return;
+  if (message.kind === "guess") {
+    return "Guess";
   }
 
-  if (event.type === "assistant-message-complete") {
-    upsertMessage(event.message);
-    return;
-  }
-
-  if (event.type === "error") {
-    errorMessage.value = event.error;
-
-    if (event.message !== undefined) {
-      upsertMessage(event.message);
-    }
-  }
+  return "Hero Guesser";
 }
 
-function upsertMessage(message: ConversationMessage): void {
-  const index = messages.value.findIndex((candidate) => candidate.id === message.id);
-
-  if (index === -1) {
-    messages.value = [...messages.value, message];
-    return;
+function formatStatus(status: string): string {
+  if (status === "won") {
+    return "Won";
   }
 
-  messages.value = [
-    ...messages.value.slice(0, index),
-    message,
-    ...messages.value.slice(index + 1)
-  ];
-}
-
-function appendAssistantDelta(content: string): void {
-  const lastAssistant = [...messages.value].reverse().find((message) => message.role === "assistant");
-
-  if (lastAssistant === undefined) {
-    return;
+  if (status === "lost") {
+    return "Lost";
   }
 
-  upsertMessage({
-    ...lastAssistant,
-    content: `${lastAssistant.content}${content}`
-  });
+  return "Active";
 }
 
 function formatTime(value: string): string {
@@ -242,6 +447,23 @@ function formatTime(value: string): string {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function formatPercent(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 0,
+    style: "percent"
+  }).format(value);
+}
+
+function formatAverage(value: number | null): string {
+  if (value === null) {
+    return "n/a";
+  }
+
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 1
+  }).format(value);
 }
 
 function toErrorMessage(error: unknown): string {

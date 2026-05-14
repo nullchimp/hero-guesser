@@ -30,6 +30,7 @@ services:
       MODEL_ALLOWLIST: ${MODEL_ALLOWLIST:-gpt-5.3-codex,gpt-5.4,gpt-5.4-mini}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PORT: 3000
+      WIKIPEDIA_USER_AGENT: ${WIKIPEDIA_USER_AGENT:-HeroGuesser/0.1 (https://github.com/nullchimp/hero-guesser)}
     ports:
       - "3000:3000"
 
