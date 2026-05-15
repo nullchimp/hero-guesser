@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AuthModule } from "../auth/auth.module.js";
 import { CodexModule } from "../codex/codex.module.js";
 import { AppConfigModule } from "../config/app-config.module.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
@@ -10,6 +11,7 @@ import { ConversationsController } from "./conversations.controller.js";
 @Module({
   imports: [
     AppConfigModule,
+    AuthModule,
     CodexModule,
     PrismaModule,
     WikipediaModule

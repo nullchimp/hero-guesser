@@ -27,6 +27,8 @@ services:
       CODEX_WORKSPACE: ${CODEX_WORKSPACE:-/workspace/codex-workspace}
       DATABASE_URL: ${DATABASE_URL:-mysql://hero:hero_password@mysql:3306/hero_guesser}
       DEFAULT_MODEL: ${DEFAULT_MODEL:-gpt-5.3-codex}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-at-least-32-characters}
       MODEL_ALLOWLIST: ${MODEL_ALLOWLIST:-gpt-5.3-codex,gpt-5.4,gpt-5.4-mini}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PORT: 3000

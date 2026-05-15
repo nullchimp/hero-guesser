@@ -37,6 +37,15 @@ enum GuessStatus {
   WRONG
 }
 
+model User {
+  id           String   @id @default(cuid())
+  heroname     String
+  heronameKey  String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 model Conversation {
   id            String    @id @default(cuid())
   sessionId     String    @unique

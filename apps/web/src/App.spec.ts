@@ -2,23 +2,38 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App.vue";
 import type {
+  AuthSession,
   GameSession,
   GuessRecord,
   LeaderboardEntry,
   SessionSummary
 } from "./services/api";
 
-const api = vi.hoisted(() => ({
-  createSession: vi.fn(),
-  deleteSession: vi.fn(),
-  fetchLeaderboard: vi.fn(),
-  fetchModels: vi.fn(),
-  fetchSession: vi.fn(),
-  fetchSessions: vi.fn(),
-  getOwnerId: vi.fn(),
-  judgeGuess: vi.fn(),
-  submitAnswer: vi.fn()
-}));
+const api = vi.hoisted(() => {
+  class ApiError extends Error {
+    constructor(message: string, readonly status: number) {
+      super(message);
+    }
+  }
+
+  return {
+    ApiError,
+    clearSavedAuth: vi.fn(),
+    createSession: vi.fn(),
+    deleteSession: vi.fn(),
+    fetchMe: vi.fn(),
+    fetchLeaderboard: vi.fn(),
+    fetchModels: vi.fn(),
+    fetchSession: vi.fn(),
+    fetchSessions: vi.fn(),
+    getSavedAuth: vi.fn(),
+    judgeGuess: vi.fn(),
+    login: vi.fn(),
+    register: vi.fn(),
+    saveAuth: vi.fn(),
+    submitAnswer: vi.fn()
+  };
+});
 
 vi.mock("./services/api", () => api);
 
@@ -26,18 +41,26 @@ const scrollIntoView = vi.fn();
 
 describe("App", () => {
   beforeEach(() => {
+    api.clearSavedAuth.mockReset();
     api.createSession.mockReset();
     api.deleteSession.mockReset();
+    api.fetchMe.mockReset();
     api.fetchLeaderboard.mockReset();
     api.fetchModels.mockReset();
     api.fetchSession.mockReset();
     api.fetchSessions.mockReset();
-    api.getOwnerId.mockReturnValue("browser-owner-1");
     api.judgeGuess.mockReset();
+    api.login.mockReset();
+    api.register.mockReset();
+    api.saveAuth.mockReset();
     api.submitAnswer.mockReset();
     scrollIntoView.mockReset();
     Element.prototype.scrollIntoView = scrollIntoView;
 
+    api.getSavedAuth.mockReturnValue(authSession());
+    api.fetchMe.mockResolvedValue({
+      user: authSession().user
+    });
     api.fetchModels.mockResolvedValue({
       defaultModel: "gpt-5.3-codex",
       models: [
@@ -49,6 +72,73 @@ describe("App", () => {
       leaderboard: []
     });
     api.deleteSession.mockResolvedValue(undefined);
+  });
+
+  it("shows the login/register screen when no auth is saved and does not load game data", () => {
+    api.getSavedAuth.mockReturnValue(null);
+
+    render(App);
+
+    expect(screen.getByLabelText("Heroname")).not.toBeNull();
+    expect(screen.getByLabelText("Password")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Log In" })).not.toBeNull();
+    expect(api.fetchMe).not.toHaveBeenCalled();
+    expect(api.fetchModels).not.toHaveBeenCalled();
+    expect(api.fetchSessions).not.toHaveBeenCalled();
+  });
+
+  it("registers a new heroname, saves auth, and loads the game", async () => {
+    const freshAuth = authSession({
+      token: "fresh-token",
+      user: {
+        heroname: "ShadowFox",
+        id: "user-1"
+      }
+    });
+    api.getSavedAuth.mockReturnValue(null);
+    api.register.mockResolvedValue(freshAuth);
+    api.fetchSessions.mockResolvedValue({
+      sessions: []
+    });
+
+    render(App);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Register" }));
+    await fireEvent.update(screen.getByLabelText("Heroname"), "ShadowFox");
+    await fireEvent.update(screen.getByLabelText("Password"), "secret123");
+    await fireEvent.update(screen.getByLabelText("Confirm Password"), "secret123");
+    await fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+
+    await waitFor(() => {
+      expect(api.register).toHaveBeenCalledWith("ShadowFox", "secret123");
+    });
+    expect(api.saveAuth).toHaveBeenCalledWith(freshAuth);
+    expect(api.fetchModels).toHaveBeenCalledWith("fresh-token");
+    expect(await screen.findByText("Think of a hero or villain, choose a model, and start a game.")).not.toBeNull();
+  });
+
+  it("clears stale saved auth and returns to login", async () => {
+    api.fetchMe.mockRejectedValue(new api.ApiError("Invalid or expired authentication token.", 401));
+
+    render(App);
+
+    expect(await screen.findByRole("button", { name: "Log In" })).not.toBeNull();
+    expect(api.clearSavedAuth).toHaveBeenCalled();
+    expect(screen.getByText("Your session expired. Log in again.")).not.toBeNull();
+  });
+
+  it("logs out and hides gameplay", async () => {
+    api.fetchSessions.mockResolvedValue({
+      sessions: []
+    });
+
+    render(App);
+
+    expect(await screen.findByText("Think of a hero or villain, choose a model, and start a game.")).not.toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+
+    expect(api.clearSavedAuth).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Log In" })).not.toBeNull();
   });
 
   it("loads server-backed sessions and the global model leaderboard", async () => {
@@ -123,7 +213,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Yes" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "No" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "Unknown" })).not.toBeNull();
-    expect(api.createSession).toHaveBeenCalledWith("browser-owner-1", "gpt-5.4-mini");
+    expect(api.createSession).toHaveBeenCalledWith("token-1", "gpt-5.4-mini");
   });
 
   it("submits a judgment from a Wikipedia-backed guess card", async () => {
@@ -172,7 +262,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(api.judgeGuess).toHaveBeenCalledWith(
-        "browser-owner-1",
+        "token-1",
         "session-1",
         "guess-1",
         "correct"
@@ -234,11 +324,11 @@ describe("App", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Delete session session-1" }));
 
     await waitFor(() => {
-      expect(api.deleteSession).toHaveBeenCalledWith("browser-owner-1", "session-1");
+      expect(api.deleteSession).toHaveBeenCalledWith("token-1", "session-1");
     });
     expect(screen.queryByRole("button", { name: "Confirm delete session session-1" })).toBeNull();
     expect(await screen.findByText("Can your character fly?")).not.toBeNull();
-    expect(api.fetchSession).toHaveBeenLastCalledWith("browser-owner-1", "session-2");
+    expect(api.fetchSession).toHaveBeenLastCalledWith("token-1", "session-2");
   });
 
   it("clears the play area when the only saved session is deleted", async () => {
@@ -440,6 +530,17 @@ describe("App", () => {
   });
 });
 
+function authSession(overrides: Partial<AuthSession> = {}): AuthSession {
+  return {
+    token: "token-1",
+    user: {
+      heroname: "ShadowFox",
+      id: "user-1"
+    },
+    ...overrides
+  };
+}
+
 function session(overrides: Partial<GameSession> = {}): GameSession {
   return {
     completedAt: null,
@@ -448,7 +549,7 @@ function session(overrides: Partial<GameSession> = {}): GameSession {
     maxQuestions: 20,
     messages: [],
     model: "gpt-5.3-codex",
-    ownerId: "browser-owner-1",
+    ownerId: "user-1",
     questionsAsked: 0,
     sessionId: "session-1",
     status: "active",

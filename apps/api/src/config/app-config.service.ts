@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { JwtSignOptions } from "@nestjs/jwt";
 
 @Injectable()
 export class AppConfigService {
@@ -26,6 +27,14 @@ export class AppConfigService {
 
   get openAiApiKey(): string {
     return this.getString("OPENAI_API_KEY");
+  }
+
+  get jwtExpiresIn(): JwtSignOptions["expiresIn"] {
+    return this.getString("JWT_EXPIRES_IN") as JwtSignOptions["expiresIn"];
+  }
+
+  get jwtSecret(): string {
+    return this.getString("JWT_SECRET");
   }
 
   get wikipediaUserAgent(): string {

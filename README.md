@@ -25,7 +25,7 @@ The application is designed to run through Docker Compose. Local Node commands a
    docker compose up --build
    ```
 
-4. Open `http://localhost:8080`.
+4. Open `http://localhost:8080`, register a heroname, and start playing.
 
 MySQL data is stored in the `hero-guesser-mysql` Docker volume, so conversation history survives container restarts.
 
@@ -46,12 +46,15 @@ docker compose exec api npm run prisma:migrate -w @hero-guesser/api
 - `OPENAI_API_KEY`: server-side key used by the Codex SDK.
 - `DEFAULT_MODEL`: model selected by default, currently `gpt-5.3-codex`.
 - `MODEL_ALLOWLIST`: comma-separated list exposed to the frontend model picker.
+- `JWT_SECRET`: secret used to sign login tokens. Use a random value with at least 32 characters outside local development.
+- `JWT_EXPIRES_IN`: login token lifetime, defaulting to `7d`.
 - `DATABASE_URL`: MySQL connection string used by Prisma.
 - `CODEX_WORKSPACE`: controlled workspace path used by Codex SDK runs inside the API container.
 - `WIKIPEDIA_USER_AGENT`: user-agent string sent by the API when looking up English Wikipedia articles and images for model guesses.
 
 ## Gameplay
 
+- Register or log in with a heroname before playing.
 - Start a new session, think of a hero or villain, and answer the model's questions with only Yes, No, or Unknown.
 - Each model gets up to 10 questions. Guesses do not consume the question budget.
 - A guess is shown with a specific English Wikipedia article, summary, and lead image when the app can verify a character-specific page.
@@ -70,7 +73,7 @@ This installs dependencies in a disposable test container, generates the Prisma 
 
 ## Open Source Notes
 
-Hero Guesser does not ship copyrighted character art, logos, wiki dumps, or proprietary datasets. Wikipedia summaries and image URLs are fetched live and stored as attribution-friendly links to the source article, while remote images are displayed from Wikimedia rather than committed to the repository. User sessions, answers, guesses, and judgments are stored in the configured MySQL database.
+Hero Guesser does not ship copyrighted character art, logos, wiki dumps, or proprietary datasets. Wikipedia summaries and image URLs are fetched live and stored as attribution-friendly links to the source article, while remote images are displayed from Wikimedia rather than committed to the repository. User accounts, password hashes, sessions, answers, guesses, and judgments are stored in the configured MySQL database.
 
 ## License
 

@@ -1,6 +1,109 @@
 <template>
   <main class="app-shell">
     <section
+      v-if="authSession === null"
+      class="auth-workspace"
+      aria-labelledby="auth-title"
+    >
+      <header class="auth-header">
+        <span
+          class="brand-mark"
+          aria-hidden="true"
+        >HG</span>
+        <div>
+          <h1 id="auth-title">
+            Hero Guesser
+          </h1>
+          <p>Access the case files</p>
+        </div>
+      </header>
+
+      <form
+        class="auth-card"
+        @submit.prevent="submitAuth"
+      >
+        <div
+          class="auth-tabs"
+          aria-label="Authentication mode"
+        >
+          <button
+            type="button"
+            :class="{ 'auth-tab--active': authMode === 'login' }"
+            @click="switchAuthMode('login')"
+          >
+            Login
+          </button>
+          <button
+            type="button"
+            :class="{ 'auth-tab--active': authMode === 'register' }"
+            @click="switchAuthMode('register')"
+          >
+            Register
+          </button>
+        </div>
+
+        <h2>{{ authTitle }}</h2>
+
+        <p
+          v-if="authErrorMessage"
+          class="error-line"
+          role="alert"
+        >
+          {{ authErrorMessage }}
+        </p>
+
+        <label class="auth-field">
+          <span>Heroname</span>
+          <input
+            v-model="authHeroname"
+            autocomplete="username"
+            maxlength="24"
+            minlength="3"
+            name="heroname"
+            pattern="[A-Za-z0-9_-]+"
+            required
+          >
+        </label>
+
+        <label class="auth-field">
+          <span>Password</span>
+          <input
+            v-model="authPassword"
+            :autocomplete="authPasswordAutocomplete"
+            minlength="8"
+            name="password"
+            required
+            type="password"
+          >
+        </label>
+
+        <label
+          v-if="authMode === 'register'"
+          class="auth-field"
+        >
+          <span>Confirm Password</span>
+          <input
+            v-model="authPasswordConfirmation"
+            autocomplete="new-password"
+            minlength="8"
+            name="confirm-password"
+            required
+            type="password"
+          >
+        </label>
+
+        <button
+          class="primary-action"
+          type="submit"
+          :disabled="isAuthenticating"
+        >
+          {{ authSubmitLabel }}
+        </button>
+      </form>
+    </section>
+
+    <section
+      v-else
       class="workspace"
       aria-labelledby="app-title"
     >
@@ -41,6 +144,14 @@
             @click="startGame"
           >
             New Game
+          </button>
+          <button
+            class="secondary-action"
+            type="button"
+            :disabled="isBusy"
+            @click="logout"
+          >
+            Logout
           </button>
         </div>
       </header>
@@ -311,6 +422,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
+  ApiError,
+  AuthSession,
   ConversationMessage,
   GameSession,
   GuessVerdict,
@@ -319,23 +432,36 @@ import {
   PlayerAnswer,
   SessionSummary,
   createSession,
+  clearSavedAuth,
   deleteSession,
+  fetchMe,
   fetchLeaderboard,
   fetchModels,
   fetchSession,
   fetchSessions,
-  getOwnerId,
+  getSavedAuth,
   judgeGuess,
+  login,
+  register,
+  saveAuth,
   submitAnswer
 } from "./services/api";
 
-const ownerId = getOwnerId();
+type AuthMode = "login" | "register";
+
+const authSession = ref<AuthSession | null>(getSavedAuth());
+const authMode = ref<AuthMode>("login");
+const authHeroname = ref("");
+const authPassword = ref("");
+const authPasswordConfirmation = ref("");
+const authErrorMessage = ref("");
+const isAuthenticating = ref(false);
 const models = ref<ModelOption[]>([]);
 const selectedModel = ref("");
 const sessions = ref<SessionSummary[]>([]);
 const activeSession = ref<GameSession | null>(null);
 const leaderboard = ref<LeaderboardEntry[]>([]);
-const isLoading = ref(true);
+const isLoading = ref(false);
 const isBusy = ref(false);
 const errorMessage = ref("");
 const messagesPanel = ref<HTMLElement | null>(null);
@@ -345,8 +471,16 @@ interface TranscriptEntry {
   message: ConversationMessage;
 }
 
-const ownerLabel = computed(() => `Player ${ownerId.slice(0, 8)}`);
-const canStartGame = computed(() => selectedModel.value.length > 0 && !isLoading.value && !isBusy.value);
+const authTitle = computed(() => authMode.value === "login" ? "Log In" : "Register");
+const authSubmitLabel = computed(() => authMode.value === "login" ? "Log In" : "Create Account");
+const authPasswordAutocomplete = computed(() => authMode.value === "login" ? "current-password" : "new-password");
+const ownerLabel = computed(() => `Hero ${authSession.value?.user.heroname ?? ""}`);
+const canStartGame = computed(() => (
+  authSession.value !== null &&
+  selectedModel.value.length > 0 &&
+  !isLoading.value &&
+  !isBusy.value
+));
 const isModelLocked = computed(() => isBusy.value || activeSession.value?.status === "active");
 const pendingGuess = computed(() => activeSession.value?.messages.find(
   (message) => message.guess?.status === "pending"
@@ -390,11 +524,35 @@ const completionText = computed(() => {
 });
 
 onMounted(async () => {
+  if (authSession.value === null) {
+    return;
+  }
+
+  await loadGame();
+});
+
+async function loadGame(): Promise<void> {
+  const token = authSession.value?.token;
+
+  if (token === undefined) {
+    return;
+  }
+
+  isLoading.value = true;
+  errorMessage.value = "";
+
   try {
+    const meResponse = await fetchMe(token);
+    authSession.value = {
+      token,
+      user: meResponse.user
+    };
+    saveAuth(authSession.value);
+
     const [modelResponse, sessionResponse, leaderboardResponse] = await Promise.all([
-      fetchModels(ownerId),
-      fetchSessions(ownerId),
-      fetchLeaderboard(ownerId)
+      fetchModels(token),
+      fetchSessions(token),
+      fetchLeaderboard(token)
     ]);
 
     models.value = modelResponse.models;
@@ -403,14 +561,19 @@ onMounted(async () => {
     leaderboard.value = leaderboardResponse.leaderboard;
 
     if (sessions.value.length > 0) {
-      activeSession.value = await fetchSession(ownerId, sessions.value[0].sessionId);
+      activeSession.value = await fetchSession(token, sessions.value[0].sessionId);
     }
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      clearAuth("Your session expired. Log in again.");
+      return;
+    }
+
     errorMessage.value = toErrorMessage(error);
   } finally {
     isLoading.value = false;
   }
-});
+}
 
 watch(
   activeSession,
@@ -426,30 +589,48 @@ watch(
 );
 
 async function startGame(): Promise<void> {
+  const token = authSession.value?.token;
+
+  if (token === undefined) {
+    return;
+  }
+
   await runAction(async () => {
-    activeSession.value = await createSession(ownerId, selectedModel.value);
+    activeSession.value = await createSession(token, selectedModel.value);
     await refreshLists();
   });
 }
 
 async function selectSession(sessionId: string): Promise<void> {
+  const token = authSession.value?.token;
+
+  if (token === undefined) {
+    return;
+  }
+
   await runAction(async () => {
-    activeSession.value = await fetchSession(ownerId, sessionId);
+    activeSession.value = await fetchSession(token, sessionId);
   });
 }
 
 async function deleteSavedSession(sessionId: string): Promise<void> {
+  const token = authSession.value?.token;
+
+  if (token === undefined) {
+    return;
+  }
+
   await runAction(async () => {
     const deletedActiveSession = activeSession.value?.sessionId === sessionId;
 
-    await deleteSession(ownerId, sessionId);
+    await deleteSession(token, sessionId);
     await refreshLists();
 
     if (deletedActiveSession) {
       activeSession.value = null;
 
       if (sessions.value.length > 0) {
-        activeSession.value = await fetchSession(ownerId, sessions.value[0].sessionId);
+        activeSession.value = await fetchSession(token, sessions.value[0].sessionId);
       }
     }
   });
@@ -490,34 +671,42 @@ function scrollMessagesToBottom(): void {
 
 async function answer(value: PlayerAnswer): Promise<void> {
   const sessionId = activeSession.value?.sessionId;
+  const token = authSession.value?.token;
 
-  if (sessionId === undefined) {
+  if (sessionId === undefined || token === undefined) {
     return;
   }
 
   await runAction(async () => {
-    activeSession.value = await submitAnswer(ownerId, sessionId, value);
+    activeSession.value = await submitAnswer(token, sessionId, value);
     await refreshLists();
   });
 }
 
 async function judge(guessId: string, verdict: GuessVerdict): Promise<void> {
   const sessionId = activeSession.value?.sessionId;
+  const token = authSession.value?.token;
 
-  if (sessionId === undefined) {
+  if (sessionId === undefined || token === undefined) {
     return;
   }
 
   await runAction(async () => {
-    activeSession.value = await judgeGuess(ownerId, sessionId, guessId, verdict);
+    activeSession.value = await judgeGuess(token, sessionId, guessId, verdict);
     await refreshLists();
   });
 }
 
 async function refreshLists(): Promise<void> {
+  const token = authSession.value?.token;
+
+  if (token === undefined) {
+    return;
+  }
+
   const [sessionResponse, leaderboardResponse] = await Promise.all([
-    fetchSessions(ownerId),
-    fetchLeaderboard(ownerId)
+    fetchSessions(token),
+    fetchLeaderboard(token)
   ]);
 
   sessions.value = sessionResponse.sessions;
@@ -531,10 +720,72 @@ async function runAction(action: () => Promise<void>): Promise<void> {
   try {
     await action();
   } catch (error) {
+    if (isUnauthorizedError(error)) {
+      clearAuth("Your session expired. Log in again.");
+      return;
+    }
+
     errorMessage.value = toErrorMessage(error);
   } finally {
     isBusy.value = false;
   }
+}
+
+async function submitAuth(): Promise<void> {
+  authErrorMessage.value = "";
+
+  if (authMode.value === "register" && authPassword.value !== authPasswordConfirmation.value) {
+    authErrorMessage.value = "Passwords do not match.";
+    return;
+  }
+
+  isAuthenticating.value = true;
+
+  try {
+    const auth = authMode.value === "login"
+      ? await login(authHeroname.value, authPassword.value)
+      : await register(authHeroname.value, authPassword.value);
+
+    authSession.value = auth;
+    saveAuth(auth);
+    authPassword.value = "";
+    authPasswordConfirmation.value = "";
+    resetGameState();
+    await loadGame();
+  } catch (error) {
+    authErrorMessage.value = toErrorMessage(error);
+  } finally {
+    isAuthenticating.value = false;
+  }
+}
+
+function switchAuthMode(mode: AuthMode): void {
+  authMode.value = mode;
+  authErrorMessage.value = "";
+  authPassword.value = "";
+  authPasswordConfirmation.value = "";
+}
+
+function logout(): void {
+  clearAuth();
+}
+
+function clearAuth(message = ""): void {
+  clearSavedAuth();
+  authSession.value = null;
+  authErrorMessage.value = message;
+  resetGameState();
+}
+
+function resetGameState(): void {
+  models.value = [];
+  selectedModel.value = "";
+  sessions.value = [];
+  activeSession.value = null;
+  leaderboard.value = [];
+  isLoading.value = false;
+  isBusy.value = false;
+  errorMessage.value = "";
 }
 
 function messageLabel(message: ConversationMessage): string {
@@ -607,5 +858,9 @@ function toErrorMessage(error: unknown): string {
   }
 
   return "Something went wrong.";
+}
+
+function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
 }
 </script>

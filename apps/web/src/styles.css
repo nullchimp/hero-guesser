@@ -75,6 +75,7 @@ select:disabled {
 
 button:focus-visible,
 select:focus-visible,
+input:focus-visible,
 a:focus-visible {
   outline: 3px solid var(--caution-yellow);
   outline-offset: 3px;
@@ -134,6 +135,112 @@ a {
 .workspace > * {
   position: relative;
   z-index: 1;
+}
+
+/* ---------- Auth ---------- */
+
+.auth-workspace {
+  display: grid;
+  align-content: center;
+  gap: 18px;
+  width: min(100%, 520px);
+  margin: auto;
+  padding: 26px;
+  background: var(--paper);
+  border: var(--border-thick);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pop);
+}
+
+.auth-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.auth-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: 1.5px;
+  text-shadow: 3px 3px 0 var(--hero-red);
+}
+
+.auth-header p {
+  margin: 5px 0 0;
+  color: var(--hero-blue);
+  font-family: var(--font-stamp);
+  font-size: 0.9rem;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.auth-card {
+  display: grid;
+  gap: 15px;
+  padding: 20px;
+  background: var(--paper-2);
+  border: var(--border-thick);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pop-sm);
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: var(--border-thick);
+  border-radius: 4px;
+}
+
+.auth-tabs button {
+  min-height: 42px;
+  background: var(--paper);
+  border: 0;
+  font-family: var(--font-heading);
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.auth-tabs button + button {
+  border-left: var(--border-thick);
+}
+
+.auth-tabs .auth-tab--active {
+  color: var(--paper);
+  background: var(--hero-blue);
+}
+
+.auth-card h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.auth-field {
+  display: grid;
+  gap: 6px;
+  font-family: var(--font-heading);
+  font-size: 0.76rem;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.auth-field input {
+  min-height: 46px;
+  padding: 10px 12px;
+  background: var(--paper);
+  border: var(--border-thick);
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* ---------- Topbar / Masthead ---------- */
@@ -265,6 +372,32 @@ a {
 }
 
 .primary-action:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.secondary-action {
+  min-height: 42px;
+  padding: 8px 14px;
+  color: var(--ink);
+  background: var(--caution-yellow);
+  border: var(--border-thick);
+  border-radius: 4px;
+  font-family: var(--font-heading);
+  font-size: 0.78rem;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-pop-sm);
+  transition: transform 80ms ease, box-shadow 80ms ease, background 120ms ease;
+}
+
+.secondary-action:hover:not(:disabled) {
+  background: var(--caution-yellow-soft);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.secondary-action:active:not(:disabled) {
   transform: translate(2px, 2px);
   box-shadow: 1px 1px 0 var(--ink);
 }

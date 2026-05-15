@@ -1,4 +1,24 @@
-const OWNER_STORAGE_KEY = "hero-guesser-owner-id";
+const AUTH_STORAGE_KEY = "hero-guesser-auth";
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+export interface AuthUser {
+  heroname: string;
+  id: string;
+}
+
+export interface AuthSession {
+  token: string;
+  user: AuthUser;
+}
+
+export interface AuthUserResponse {
+  user: AuthUser;
+}
 
 export interface ModelOption {
   id: string;
@@ -89,60 +109,118 @@ export interface LeaderboardResponse {
   leaderboard: LeaderboardEntry[];
 }
 
-export function getOwnerId(): string {
-  const savedOwnerId = window.localStorage.getItem(OWNER_STORAGE_KEY);
+export function getSavedAuth(): AuthSession | null {
+  const savedAuth = window.localStorage.getItem(AUTH_STORAGE_KEY);
 
-  if (savedOwnerId !== null && savedOwnerId.trim().length > 0) {
-    return savedOwnerId;
+  if (savedAuth === null) {
+    return null;
   }
 
-  const ownerId = createOwnerId();
-  window.localStorage.setItem(OWNER_STORAGE_KEY, ownerId);
-  return ownerId;
+  try {
+    const parsed = JSON.parse(savedAuth) as Partial<AuthSession>;
+
+    if (
+      typeof parsed.token === "string" &&
+      typeof parsed.user?.id === "string" &&
+      typeof parsed.user.heroname === "string"
+    ) {
+      return {
+        token: parsed.token,
+        user: {
+          heroname: parsed.user.heroname,
+          id: parsed.user.id
+        }
+      };
+    }
+  } catch {
+    // Invalid local storage data is treated as logged out.
+  }
+
+  clearSavedAuth();
+  return null;
 }
 
-export async function fetchModels(ownerId: string): Promise<ModelsResponse> {
+export function saveAuth(auth: AuthSession): void {
+  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+}
+
+export function clearSavedAuth(): void {
+  window.localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+export async function register(heroname: string, password: string): Promise<AuthSession> {
+  const response = await fetch("/api/auth/register", {
+    body: JSON.stringify({
+      heroname,
+      password
+    }),
+    headers: unauthenticatedJsonHeaders(),
+    method: "POST"
+  });
+  return readJson<AuthSession>(response);
+}
+
+export async function login(heroname: string, password: string): Promise<AuthSession> {
+  const response = await fetch("/api/auth/login", {
+    body: JSON.stringify({
+      heroname,
+      password
+    }),
+    headers: unauthenticatedJsonHeaders(),
+    method: "POST"
+  });
+  return readJson<AuthSession>(response);
+}
+
+export async function fetchMe(token: string): Promise<AuthUserResponse> {
+  const response = await fetch("/api/auth/me", {
+    headers: authHeaders(token)
+  });
+  return readJson<AuthUserResponse>(response);
+}
+
+export async function fetchModels(token: string): Promise<ModelsResponse> {
   const response = await fetch("/api/models", {
-    headers: ownerHeaders(ownerId)
+    headers: authHeaders(token)
   });
   return readJson<ModelsResponse>(response);
 }
 
-export async function fetchSessions(ownerId: string): Promise<SessionsResponse> {
+export async function fetchSessions(token: string): Promise<SessionsResponse> {
   const response = await fetch("/api/sessions", {
-    headers: ownerHeaders(ownerId)
+    headers: authHeaders(token)
   });
   return readJson<SessionsResponse>(response);
 }
 
-export async function createSession(ownerId: string, model: string): Promise<GameSession> {
+export async function createSession(token: string, model: string): Promise<GameSession> {
   const response = await fetch("/api/sessions", {
     body: JSON.stringify({
       model
     }),
-    headers: jsonHeaders(ownerId),
+    headers: jsonHeaders(token),
     method: "POST"
   });
   return readJson<GameSession>(response);
 }
 
-export async function fetchSession(ownerId: string, sessionId: string): Promise<GameSession> {
+export async function fetchSession(token: string, sessionId: string): Promise<GameSession> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-    headers: ownerHeaders(ownerId)
+    headers: authHeaders(token)
   });
   return readJson<GameSession>(response);
 }
 
-export async function deleteSession(ownerId: string, sessionId: string): Promise<void> {
+export async function deleteSession(token: string, sessionId: string): Promise<void> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-    headers: ownerHeaders(ownerId),
+    headers: authHeaders(token),
     method: "DELETE"
   });
   await readEmpty(response);
 }
 
 export async function submitAnswer(
-  ownerId: string,
+  token: string,
   sessionId: string,
   answer: PlayerAnswer
 ): Promise<GameSession> {
@@ -150,14 +228,14 @@ export async function submitAnswer(
     body: JSON.stringify({
       answer
     }),
-    headers: jsonHeaders(ownerId),
+    headers: jsonHeaders(token),
     method: "POST"
   });
   return readJson<GameSession>(response);
 }
 
 export async function judgeGuess(
-  ownerId: string,
+  token: string,
   sessionId: string,
   guessId: string,
   verdict: GuessVerdict
@@ -168,45 +246,42 @@ export async function judgeGuess(
       body: JSON.stringify({
         verdict
       }),
-      headers: jsonHeaders(ownerId),
+      headers: jsonHeaders(token),
       method: "POST"
     }
   );
   return readJson<GameSession>(response);
 }
 
-export async function fetchLeaderboard(ownerId: string): Promise<LeaderboardResponse> {
+export async function fetchLeaderboard(token: string): Promise<LeaderboardResponse> {
   const response = await fetch("/api/leaderboard", {
-    headers: ownerHeaders(ownerId)
+    headers: authHeaders(token)
   });
   return readJson<LeaderboardResponse>(response);
 }
 
-function ownerHeaders(ownerId: string): Record<string, string> {
+function authHeaders(token: string): Record<string, string> {
   return {
-    "X-Hero-Owner-Id": ownerId
+    Authorization: `Bearer ${token}`
   };
 }
 
-function jsonHeaders(ownerId: string): Record<string, string> {
+function jsonHeaders(token: string): Record<string, string> {
   return {
-    ...ownerHeaders(ownerId),
+    ...authHeaders(token),
     "Content-Type": "application/json"
   };
 }
 
-function createOwnerId(): string {
-  if ("randomUUID" in window.crypto) {
-    return window.crypto.randomUUID();
-  }
-
-  return `owner-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function unauthenticatedJsonHeaders(): Record<string, string> {
+  return {
+    "Content-Type": "application/json"
+  };
 }
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed with status ${response.status}.`);
+    throw new ApiError(await readErrorMessage(response), response.status);
   }
 
   return (await response.json()) as T;
@@ -214,7 +289,30 @@ async function readJson<T>(response: Response): Promise<T> {
 
 async function readEmpty(response: Response): Promise<void> {
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed with status ${response.status}.`);
+    throw new ApiError(await readErrorMessage(response), response.status);
   }
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  const body = await response.text();
+
+  if (!body) {
+    return `Request failed with status ${response.status}.`;
+  }
+
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown };
+
+    if (typeof parsed.message === "string") {
+      return parsed.message;
+    }
+
+    if (Array.isArray(parsed.message) && parsed.message.every((entry) => typeof entry === "string")) {
+      return parsed.message.join(" ");
+    }
+  } catch {
+    return body;
+  }
+
+  return body;
 }
