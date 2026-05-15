@@ -172,9 +172,47 @@ describe("App", () => {
 
     render(App);
 
-    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    expect(await screen.findByRole("button", { name: "Open session session-1" })).not.toBeNull();
     expect(screen.getAllByText("gpt-5.4-mini").length).toBeGreaterThan(0);
     expect(screen.getByText("100%")).not.toBeNull();
+    expect(api.fetchSession).not.toHaveBeenCalled();
+    expect(screen.getByText("Think of a hero or villain, choose a model, and start a game.")).not.toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Open session session-1" }));
+    expect((await screen.findAllByText("Is your character from DC Comics?")).length).toBeGreaterThan(0);
+  });
+
+  it("lands on the empty start screen after a fresh login when saved sessions exist", async () => {
+    api.getSavedAuth.mockReturnValue(null);
+    api.login.mockResolvedValue(authSession());
+    api.fetchSessions.mockResolvedValue({
+      sessions: [
+        summary({
+          lastMessage: "Is your character from DC Comics?",
+          sessionId: "session-1"
+        })
+      ]
+    });
+    api.fetchSession.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "Is your character from DC Comics?",
+          kind: "question",
+          role: "assistant"
+        })
+      ],
+      sessionId: "session-1"
+    }));
+
+    render(App);
+
+    await fireEvent.update(screen.getByLabelText("Heroname"), "ShadowFox");
+    await fireEvent.update(screen.getByLabelText("Password"), "secret123");
+    await fireEvent.click(screen.getByRole("button", { name: "Log In" }));
+
+    expect(await screen.findByText("Think of a hero or villain, choose a model, and start a game.")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Open session session-1" })).not.toBeNull();
+    expect(api.fetchSession).not.toHaveBeenCalled();
   });
 
   it("starts a new game with the selected model and renders answer buttons only", async () => {
@@ -257,6 +295,7 @@ describe("App", () => {
 
     render(App);
 
+    await fireEvent.click(await screen.findByRole("button", { name: "Open session session-1" }));
     expect(await screen.findByText("Batman on Wikipedia")).not.toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Correct" }));
 
@@ -320,14 +359,15 @@ describe("App", () => {
 
     render(App);
 
-    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    await fireEvent.click(await screen.findByRole("button", { name: "Open session session-1" }));
+    expect((await screen.findAllByText("Is your character from DC Comics?")).length).toBeGreaterThan(0);
     await fireEvent.click(screen.getByRole("button", { name: "Delete session session-1" }));
 
     await waitFor(() => {
       expect(api.deleteSession).toHaveBeenCalledWith("token-1", "session-1");
     });
     expect(screen.queryByRole("button", { name: "Confirm delete session session-1" })).toBeNull();
-    expect(await screen.findByText("Can your character fly?")).not.toBeNull();
+    expect((await screen.findAllByText("Can your character fly?")).length).toBeGreaterThan(0);
     expect(api.fetchSession).toHaveBeenLastCalledWith("token-1", "session-2");
   });
 
@@ -357,7 +397,8 @@ describe("App", () => {
 
     render(App);
 
-    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    await fireEvent.click(await screen.findByRole("button", { name: "Open session session-1" }));
+    expect((await screen.findAllByText("Is your character from DC Comics?")).length).toBeGreaterThan(0);
     await fireEvent.click(screen.getByRole("button", { name: "Delete session session-1" }));
 
     expect(await screen.findByText("Think of a hero or villain, choose a model, and start a game.")).not.toBeNull();
@@ -398,7 +439,8 @@ describe("App", () => {
 
     render(App);
 
-    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    await fireEvent.click(await screen.findByRole("button", { name: "Open session session-1" }));
+    expect((await screen.findAllByText("Is your character from DC Comics?")).length).toBeGreaterThan(0);
     expect(screen.getByLabelText("You answered yes")).not.toBeNull();
     expect(screen.queryByText("You")).toBeNull();
   });
@@ -430,6 +472,7 @@ describe("App", () => {
 
     render(App);
 
+    await fireEvent.click(await screen.findByRole("button", { name: "Open session session-1" }));
     const image = await screen.findByAltText("Batman");
     await fireEvent.load(image);
 
@@ -488,6 +531,7 @@ describe("App", () => {
 
     render(App);
 
+    await fireEvent.click(await screen.findByRole("button", { name: "Open session session-1" }));
     const picker = await screen.findByLabelText<HTMLSelectElement>(/Model in play|Model for new games/);
     await waitFor(() => {
       expect(picker.disabled).toBe(true);
@@ -525,7 +569,8 @@ describe("App", () => {
 
     render(App);
 
-    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    await fireEvent.click(await screen.findByRole("button", { name: "Open session session-1" }));
+    expect((await screen.findAllByText("Is your character from DC Comics?")).length).toBeGreaterThan(0);
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
@@ -551,7 +596,8 @@ describe("App", () => {
 
     render(App);
 
-    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    await fireEvent.click(await screen.findByRole("button", { name: "Open session session-1" }));
+    expect((await screen.findAllByText("Is your character from DC Comics?")).length).toBeGreaterThan(0);
 
     const homeButton = await screen.findByRole("button", { name: "Return to start screen" });
     await fireEvent.click(homeButton);

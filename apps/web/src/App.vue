@@ -569,10 +569,6 @@ async function loadGame(): Promise<void> {
     selectedModel.value = modelResponse.defaultModel;
     sessions.value = sessionResponse.sessions;
     leaderboard.value = leaderboardResponse.leaderboard;
-
-    if (sessions.value.length > 0) {
-      activeSession.value = await fetchSession(token, sessions.value[0].sessionId);
-    }
   } catch (error) {
     if (isUnauthorizedError(error)) {
       clearAuth("Your session expired. Log in again.");
