@@ -1,13 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import App from "./App.vue";
+import App from "../App.vue";
 import type {
   AuthSession,
   GameSession,
   GuessRecord,
   LeaderboardEntry,
   SessionSummary
-} from "./services/api";
+} from "../services/api";
 
 const api = vi.hoisted(() => {
   class ApiError extends Error {
@@ -35,7 +35,7 @@ const api = vi.hoisted(() => {
   };
 });
 
-vi.mock("./services/api", () => api);
+vi.mock("../services/api", () => api);
 
 const scrollIntoView = vi.fn();
 
