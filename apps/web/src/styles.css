@@ -298,6 +298,37 @@ a {
   pointer-events: none;
 }
 
+.brand-mark--button {
+  padding: 0;
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: transform 80ms ease, box-shadow 80ms ease, background 120ms ease;
+}
+
+.brand-mark--button:hover:not(:disabled) {
+  background: var(--caution-yellow-soft);
+  transform: rotate(-6deg) translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.brand-mark--button:active:not(:disabled) {
+  transform: rotate(-6deg) translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.brand-mark--button:focus-visible {
+  outline: 3px solid var(--hero-red);
+  outline-offset: 3px;
+}
+
+.brand-mark--button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .brand h1 {
   margin: 0;
   color: var(--paper);
@@ -667,6 +698,21 @@ a {
   font-size: 1.25rem;
   letter-spacing: 2px;
   content: "★ READY ★";
+}
+
+.state-block--starter {
+  gap: 18px;
+  align-content: center;
+}
+
+.starter-image {
+  width: min(100%, 520px);
+  max-height: 48vh;
+  object-fit: contain;
+  border: var(--border-thick);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pop-sm);
+  background: var(--paper);
 }
 
 .session-header {

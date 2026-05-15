@@ -528,6 +528,38 @@ describe("App", () => {
     expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
+
+  it("returns to the start screen via the Home button without deleting the session", async () => {
+    api.fetchSessions.mockResolvedValue({
+      sessions: [
+        summary({
+          lastMessage: "Is your character from DC Comics?",
+          sessionId: "session-1"
+        })
+      ]
+    });
+    api.fetchSession.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "Is your character from DC Comics?",
+          kind: "question",
+          role: "assistant"
+        })
+      ],
+      sessionId: "session-1"
+    }));
+
+    render(App);
+
+    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+
+    const homeButton = await screen.findByRole("button", { name: "Return to start screen" });
+    await fireEvent.click(homeButton);
+
+    expect(await screen.findByText("Think of a hero or villain, choose a model, and start a game.")).not.toBeNull();
+    expect(api.deleteSession).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Open session session-1" })).not.toBeNull();
+  });
 });
 
 function authSession(overrides: Partial<AuthSession> = {}): AuthSession {

@@ -109,10 +109,15 @@
     >
       <header class="topbar">
         <div class="brand">
-          <span
-            class="brand-mark"
-            aria-hidden="true"
-          >HG</span>
+          <button
+            class="brand-mark brand-mark--button"
+            type="button"
+            :disabled="isBusy"
+            aria-label="Return to start screen"
+            @click="goHome"
+          >
+            HG
+          </button>
           <div>
             <h1 id="app-title">
               Hero Guesser
@@ -231,9 +236,14 @@
 
           <div
             v-else-if="activeSession === null"
-            class="state-block"
+            class="state-block state-block--starter"
           >
-            Think of a hero or villain, choose a model, and start a game.
+            <img
+              class="starter-image"
+              src="/hero.png"
+              alt="A split portrait of a hero in a cape against a sunlit city and a villain in a dark coat against a moonlit skyline"
+            >
+            <p>Think of a hero or villain, choose a model, and start a game.</p>
           </div>
 
           <template v-else>
@@ -611,6 +621,11 @@ async function selectSession(sessionId: string): Promise<void> {
   await runAction(async () => {
     activeSession.value = await fetchSession(token, sessionId);
   });
+}
+
+function goHome(): void {
+  errorMessage.value = "";
+  activeSession.value = null;
 }
 
 async function deleteSavedSession(sessionId: string): Promise<void> {
