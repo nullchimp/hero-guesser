@@ -20,10 +20,10 @@
 
         <div class="topbar-actions">
           <label class="model-picker">
-            <span>Model for new games</span>
+            <span>{{ isModelLocked ? "Model in play" : "Model for new games" }}</span>
             <select
               v-model="selectedModel"
-              :disabled="isBusy"
+              :disabled="isModelLocked"
             >
               <option
                 v-for="model in models"
@@ -347,6 +347,7 @@ interface TranscriptEntry {
 
 const ownerLabel = computed(() => `Player ${ownerId.slice(0, 8)}`);
 const canStartGame = computed(() => selectedModel.value.length > 0 && !isLoading.value && !isBusy.value);
+const isModelLocked = computed(() => isBusy.value || activeSession.value?.status === "active");
 const pendingGuess = computed(() => activeSession.value?.messages.find(
   (message) => message.guess?.status === "pending"
 )?.guess ?? null);
@@ -413,7 +414,11 @@ onMounted(async () => {
 
 watch(
   activeSession,
-  async () => {
+  async (session) => {
+    if (session?.status === "active" && session.model !== selectedModel.value) {
+      selectedModel.value = session.model;
+    }
+
     await nextTick();
     scrollMessagesToBottom();
   },
@@ -457,13 +462,27 @@ function scrollMessagesToBottom(): void {
     return;
   }
 
-  panel.scrollTop = panel.scrollHeight;
-
   const scheduleFrame = globalThis.requestAnimationFrame ?? ((callback: FrameRequestCallback) => {
     globalThis.setTimeout(() => callback(Date.now()), 0);
     return 0;
   });
 
+  const guessElements = panel.querySelectorAll<HTMLElement>(".message--guess");
+  const lastGuess = guessElements.length > 0 ? guessElements[guessElements.length - 1] : null;
+
+  if (lastGuess !== null) {
+    const placeGuess = (): void => {
+      panel.scrollTop = Math.max(0, lastGuess.offsetTop - 12);
+    };
+
+    placeGuess();
+    scheduleFrame(() => {
+      placeGuess();
+    });
+    return;
+  }
+
+  panel.scrollTop = panel.scrollHeight;
   scheduleFrame(() => {
     panel.scrollTop = panel.scrollHeight;
   });

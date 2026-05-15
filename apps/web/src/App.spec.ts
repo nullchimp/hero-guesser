@@ -313,9 +313,9 @@ describe("App", () => {
     expect(screen.queryByText("You")).toBeNull();
   });
 
-  it("scrolls the message panel again after a guess image loads", async () => {
-    const scrollPanel = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get");
-    scrollPanel.mockReturnValue(1200);
+  it("anchors the guess card to the top of the panel after the image loads", async () => {
+    const offsetTopSpy = vi.spyOn(HTMLElement.prototype, "offsetTop", "get");
+    offsetTopSpy.mockReturnValue(640);
     api.fetchSessions.mockResolvedValue({
       sessions: [
         summary({
@@ -344,9 +344,73 @@ describe("App", () => {
     await fireEvent.load(image);
 
     await waitFor(() => {
-      expect(image.closest(".messages")?.scrollTop).toBe(1200);
+      expect(image.closest(".messages")?.scrollTop).toBe(628);
     });
-    scrollPanel.mockRestore();
+    offsetTopSpy.mockRestore();
+  });
+
+  it("locks the model picker while a session is active and unlocks it once the game ends", async () => {
+    api.fetchSessions
+      .mockResolvedValueOnce({
+        sessions: [
+          summary({
+            model: "gpt-5.4-mini",
+            sessionId: "session-1",
+            status: "active"
+          })
+        ]
+      })
+      .mockResolvedValue({
+        sessions: [
+          summary({
+            model: "gpt-5.4-mini",
+            sessionId: "session-1",
+            status: "won"
+          })
+        ]
+      });
+    const guess = guessRecord({ name: "Batman" });
+    api.fetchSession.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "The answers point to Batman.",
+          guess,
+          kind: "guess",
+          role: "assistant"
+        })
+      ],
+      model: "gpt-5.4-mini",
+      sessionId: "session-1"
+    }));
+    api.judgeGuess.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "The answers point to Batman.",
+          guess: { ...guess, status: "correct" },
+          kind: "guess",
+          role: "assistant"
+        })
+      ],
+      model: "gpt-5.4-mini",
+      sessionId: "session-1",
+      status: "won"
+    }));
+
+    render(App);
+
+    const picker = await screen.findByLabelText<HTMLSelectElement>(/Model in play|Model for new games/);
+    await waitFor(() => {
+      expect(picker.disabled).toBe(true);
+    });
+    expect(screen.getByText("Model in play")).not.toBeNull();
+    expect(picker.value).toBe("gpt-5.4-mini");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Correct" }));
+
+    await waitFor(() => {
+      expect(picker.disabled).toBe(false);
+    });
+    expect(screen.getByText("Model for new games")).not.toBeNull();
   });
 
   it("keeps active session updates from scrolling the full page", async () => {
