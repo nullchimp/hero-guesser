@@ -10,6 +10,7 @@ import type {
 
 const api = vi.hoisted(() => ({
   createSession: vi.fn(),
+  deleteSession: vi.fn(),
   fetchLeaderboard: vi.fn(),
   fetchModels: vi.fn(),
   fetchSession: vi.fn(),
@@ -21,9 +22,12 @@ const api = vi.hoisted(() => ({
 
 vi.mock("./services/api", () => api);
 
+const scrollIntoView = vi.fn();
+
 describe("App", () => {
   beforeEach(() => {
     api.createSession.mockReset();
+    api.deleteSession.mockReset();
     api.fetchLeaderboard.mockReset();
     api.fetchModels.mockReset();
     api.fetchSession.mockReset();
@@ -31,7 +35,8 @@ describe("App", () => {
     api.getOwnerId.mockReturnValue("browser-owner-1");
     api.judgeGuess.mockReset();
     api.submitAnswer.mockReset();
-    Element.prototype.scrollIntoView = vi.fn();
+    scrollIntoView.mockReset();
+    Element.prototype.scrollIntoView = scrollIntoView;
 
     api.fetchModels.mockResolvedValue({
       defaultModel: "gpt-5.3-codex",
@@ -43,6 +48,7 @@ describe("App", () => {
     api.fetchLeaderboard.mockResolvedValue({
       leaderboard: []
     });
+    api.deleteSession.mockResolvedValue(undefined);
   });
 
   it("loads server-backed sessions and the global model leaderboard", async () => {
@@ -174,6 +180,200 @@ describe("App", () => {
     });
     expect(await screen.findByText("The model won this round.")).not.toBeNull();
   });
+
+  it("deletes the active session from a compact trash action and selects the next saved session", async () => {
+    api.fetchSessions
+      .mockResolvedValueOnce({
+        sessions: [
+          summary({
+            lastMessage: "Is your character from DC Comics?",
+            sessionId: "session-1"
+          }),
+          summary({
+            lastMessage: "Can your character fly?",
+            model: "gpt-5.4-mini",
+            sessionId: "session-2"
+          })
+        ]
+      })
+      .mockResolvedValueOnce({
+        sessions: [
+          summary({
+            lastMessage: "Can your character fly?",
+            model: "gpt-5.4-mini",
+            sessionId: "session-2"
+          })
+        ]
+      });
+    api.fetchSession
+      .mockResolvedValueOnce(session({
+        messages: [
+          message({
+            content: "Is your character from DC Comics?",
+            kind: "question",
+            role: "assistant"
+          })
+        ],
+        sessionId: "session-1"
+      }))
+      .mockResolvedValueOnce(session({
+        messages: [
+          message({
+            content: "Can your character fly?",
+            kind: "question",
+            role: "assistant"
+          })
+        ],
+        model: "gpt-5.4-mini",
+        sessionId: "session-2"
+      }));
+
+    render(App);
+
+    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Delete session session-1" }));
+
+    await waitFor(() => {
+      expect(api.deleteSession).toHaveBeenCalledWith("browser-owner-1", "session-1");
+    });
+    expect(screen.queryByRole("button", { name: "Confirm delete session session-1" })).toBeNull();
+    expect(await screen.findByText("Can your character fly?")).not.toBeNull();
+    expect(api.fetchSession).toHaveBeenLastCalledWith("browser-owner-1", "session-2");
+  });
+
+  it("clears the play area when the only saved session is deleted", async () => {
+    api.fetchSessions
+      .mockResolvedValueOnce({
+        sessions: [
+          summary({
+            lastMessage: "Is your character from DC Comics?",
+            sessionId: "session-1"
+          })
+        ]
+      })
+      .mockResolvedValueOnce({
+        sessions: []
+      });
+    api.fetchSession.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "Is your character from DC Comics?",
+          kind: "question",
+          role: "assistant"
+        })
+      ],
+      sessionId: "session-1"
+    }));
+
+    render(App);
+
+    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Delete session session-1" }));
+
+    expect(await screen.findByText("Think of a hero or villain, choose a model, and start a game.")).not.toBeNull();
+  });
+
+  it("attaches player answers to the question instead of rendering separate answer bubbles", async () => {
+    api.fetchSessions.mockResolvedValue({
+      sessions: [
+        summary({
+          lastMessage: "Is your character from DC Comics?",
+          sessionId: "session-1"
+        })
+      ]
+    });
+    api.fetchSession.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "Is your character from DC Comics?",
+          id: "message-1",
+          kind: "question",
+          role: "assistant"
+        }),
+        message({
+          content: "yes",
+          id: "message-2",
+          kind: "answer",
+          role: "user"
+        }),
+        message({
+          content: "Can your character fly?",
+          id: "message-3",
+          kind: "question",
+          role: "assistant"
+        })
+      ],
+      sessionId: "session-1"
+    }));
+
+    render(App);
+
+    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    expect(screen.getByLabelText("You answered yes")).not.toBeNull();
+    expect(screen.queryByText("You")).toBeNull();
+  });
+
+  it("scrolls the message panel again after a guess image loads", async () => {
+    const scrollPanel = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get");
+    scrollPanel.mockReturnValue(1200);
+    api.fetchSessions.mockResolvedValue({
+      sessions: [
+        summary({
+          pendingGuessName: "Batman",
+          sessionId: "session-1"
+        })
+      ]
+    });
+    api.fetchSession.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "The answers point to Batman.",
+          guess: guessRecord({
+            name: "Batman"
+          }),
+          kind: "guess",
+          role: "assistant"
+        })
+      ],
+      sessionId: "session-1"
+    }));
+
+    render(App);
+
+    const image = await screen.findByAltText("Batman");
+    await fireEvent.load(image);
+
+    await waitFor(() => {
+      expect(image.closest(".messages")?.scrollTop).toBe(1200);
+    });
+    scrollPanel.mockRestore();
+  });
+
+  it("keeps active session updates from scrolling the full page", async () => {
+    api.fetchSessions.mockResolvedValue({
+      sessions: [
+        summary({
+          lastMessage: "Is your character from DC Comics?",
+          sessionId: "session-1"
+        })
+      ]
+    });
+    api.fetchSession.mockResolvedValue(session({
+      messages: [
+        message({
+          content: "Is your character from DC Comics?",
+          kind: "question",
+          role: "assistant"
+        })
+      ],
+      sessionId: "session-1"
+    }));
+
+    render(App);
+
+    expect(await screen.findByText("Is your character from DC Comics?")).not.toBeNull();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
 });
 
 function session(overrides: Partial<GameSession> = {}): GameSession {
@@ -181,7 +381,7 @@ function session(overrides: Partial<GameSession> = {}): GameSession {
     completedAt: null,
     createdAt: "2026-05-15T12:00:00.000Z",
     guesses: [],
-    maxQuestions: 10,
+    maxQuestions: 20,
     messages: [],
     model: "gpt-5.3-codex",
     ownerId: "browser-owner-1",
@@ -198,7 +398,7 @@ function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     completedAt: null,
     createdAt: "2026-05-15T12:00:00.000Z",
     lastMessage: null,
-    maxQuestions: 10,
+    maxQuestions: 20,
     model: "gpt-5.3-codex",
     pendingGuessName: null,
     questionsAsked: 0,

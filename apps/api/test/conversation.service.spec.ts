@@ -33,7 +33,7 @@ describe("ConversationService game sessions", () => {
     });
 
     expect(session).toMatchObject({
-      maxQuestions: 10,
+      maxQuestions: 20,
       model: "gpt-5.4-mini",
       ownerId: "browser-owner-1",
       questionsAsked: 1,
@@ -108,11 +108,11 @@ describe("ConversationService game sessions", () => {
     });
   });
 
-  it("marks the session lost when a tenth-question guess is judged wrong", async () => {
+  it("marks the session lost when a twentieth-question guess is judged wrong", async () => {
     const repository = new FakeConversationRepository();
     const conversation = repository.seedConversation({
       ownerId: "browser-owner-1",
-      questionsAsked: 10
+      questionsAsked: 20
     });
     const message = await repository.createMessage({
       content: "The pattern points to Batman.",
@@ -146,6 +146,53 @@ describe("ConversationService game sessions", () => {
     expect(session.status).toBe("lost");
     expect(session.completedAt).not.toBeNull();
     expect(codex.calls).toHaveLength(0);
+  });
+
+  it("deletes an owned session from future session lists", async () => {
+    const repository = new FakeConversationRepository();
+    const conversation = repository.seedConversation({
+      ownerId: "browser-owner-1"
+    });
+    const service = createService({
+      repository
+    });
+
+    await service.deleteSession({
+      ownerId: "browser-owner-1",
+      sessionId: conversation.sessionId
+    });
+
+    await expect(service.listSessions({
+      ownerId: "browser-owner-1"
+    })).resolves.toEqual({
+      sessions: []
+    });
+    await expect(service.getSession({
+      ownerId: "browser-owner-1",
+      sessionId: conversation.sessionId
+    })).rejects.toThrow("Session not found.");
+  });
+
+  it("does not delete a session owned by another player", async () => {
+    const repository = new FakeConversationRepository();
+    const conversation = repository.seedConversation({
+      ownerId: "owner-a"
+    });
+    const service = createService({
+      repository
+    });
+
+    await expect(service.deleteSession({
+      ownerId: "owner-b",
+      sessionId: conversation.sessionId
+    })).rejects.toThrow("Session not found.");
+
+    await expect(service.getSession({
+      ownerId: "owner-a",
+      sessionId: conversation.sessionId
+    })).resolves.toMatchObject({
+      sessionId: conversation.sessionId
+    });
   });
 
   it("ranks the global model leaderboard by win rate and average winning tries", async () => {
@@ -364,6 +411,28 @@ class FakeConversationRepository {
 
   async listCompletedSessions(): Promise<ConversationRecord[]> {
     return this.conversations.filter((conversation) => conversation.status !== "active");
+  }
+
+  async deleteSession(conversationId: string): Promise<void> {
+    const index = this.conversations.findIndex((candidate) => candidate.id === conversationId);
+
+    if (index < 0) {
+      throw new Error(`Missing conversation ${conversationId}.`);
+    }
+
+    this.conversations.splice(index, 1);
+
+    for (let messageIndex = this.messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+      if (this.messages[messageIndex].conversationId === conversationId) {
+        this.messages.splice(messageIndex, 1);
+      }
+    }
+
+    for (let guessIndex = this.guesses.length - 1; guessIndex >= 0; guessIndex -= 1) {
+      if (this.guesses[guessIndex].conversationId === conversationId) {
+        this.guesses.splice(guessIndex, 1);
+      }
+    }
   }
 
   private readConversation(conversationId: string): ConversationRecord {

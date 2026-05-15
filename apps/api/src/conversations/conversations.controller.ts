@@ -2,8 +2,11 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   Post
 } from "@nestjs/common";
@@ -56,6 +59,18 @@ export class ConversationsController {
     @Param("sessionId") sessionId: string
   ): ReturnType<ConversationService["getSession"]> {
     return this.conversations.getSession({
+      ownerId: readOwnerId(ownerId),
+      sessionId
+    });
+  }
+
+  @Delete("sessions/:sessionId")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteSession(
+    @Headers("x-hero-owner-id") ownerId: string | undefined,
+    @Param("sessionId") sessionId: string
+  ): ReturnType<ConversationService["deleteSession"]> {
+    return this.conversations.deleteSession({
       ownerId: readOwnerId(ownerId),
       sessionId
     });

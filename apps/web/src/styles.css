@@ -12,9 +12,16 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
   min-width: 320px;
   margin: 0;
+  overflow: hidden;
 }
 
 button,
@@ -32,9 +39,19 @@ select:disabled {
   opacity: 0.62;
 }
 
+button:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgba(31, 122, 140, 0.3);
+  outline-offset: 2px;
+}
+
 .app-shell {
-  min-height: 100vh;
+  display: grid;
+  height: 100vh;
+  min-height: 0;
   padding: 20px;
+  overflow: hidden;
   background:
     linear-gradient(90deg, rgba(24, 33, 47, 0.05) 1px, transparent 1px),
     linear-gradient(180deg, rgba(24, 33, 47, 0.05) 1px, transparent 1px),
@@ -44,9 +61,10 @@ select:disabled {
 
 .workspace {
   display: grid;
-  grid-template-rows: auto 1fr;
-  max-width: 1380px;
-  min-height: calc(100vh - 40px);
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(100%, 1380px);
+  height: 100%;
+  min-height: 0;
   margin: 0 auto;
   overflow: hidden;
   background: #ffffff;
@@ -131,7 +149,7 @@ select:disabled {
 .primary-action,
 .answer-bar button,
 .judgment-actions button {
-  min-height: 40px;
+  min-height: 42px;
   padding: 9px 16px;
   color: #ffffff;
   background: #1f7a8c;
@@ -141,23 +159,16 @@ select:disabled {
 }
 
 .primary-action:hover:not(:disabled),
-.answer-bar button:hover:not(:disabled),
-.judgment-actions button:hover:not(:disabled) {
+.answer-button--unknown:hover:not(:disabled),
+.judgment-button--correct:hover:not(:disabled) {
   background: #176273;
-}
-
-.judgment-actions button:last-child {
-  background: #9b2c2c;
-}
-
-.judgment-actions button:last-child:hover:not(:disabled) {
-  background: #7f1d1d;
 }
 
 .game-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 330px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar,
@@ -210,44 +221,137 @@ select:disabled {
   padding: 3px 9px;
 }
 
-.session-row {
+.session-card {
   display: grid;
-  width: 100%;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: start;
+  gap: 8px;
   margin-bottom: 8px;
-  padding: 11px 12px;
-  text-align: left;
+  padding: 10px;
   color: #1f2937;
   background: #ffffff;
   border: 1px solid #cfd8e5;
   border-radius: 8px;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
 }
 
-.session-row--active {
+.session-card:hover {
+  border-color: #9fb1c4;
+}
+
+.session-card--active {
   border-color: #1f7a8c;
-  box-shadow: inset 3px 0 0 #1f7a8c;
+  box-shadow: inset 4px 0 0 #1f7a8c;
 }
 
-.session-row span {
-  font-weight: 800;
+.session-main {
+  display: grid;
+  width: 100%;
+  gap: 6px;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
 }
 
-.session-row strong {
+.session-main:hover:not(:disabled) .session-model {
+  color: #1f7a8c;
+}
+
+.session-model {
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.session-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-status strong {
   color: #445064;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   text-transform: uppercase;
 }
 
-.session-row small,
+.session-main small,
 .guess-body small {
   color: #667085;
   font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.session-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.session-delete-action {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: #9b2c2c;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.session-delete-action:hover:not(:disabled) {
+  background: #fff1f2;
+  border-color: #fecdd3;
+}
+
+.judgment-button--wrong:hover:not(:disabled),
+.answer-button--no:hover:not(:disabled) {
+  background: #7f1d1d;
+  border-color: #7f1d1d;
+}
+
+.trash-icon {
+  position: relative;
+  display: block;
+  width: 13px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 2px 2px;
+}
+
+.trash-icon::before {
+  position: absolute;
+  top: -5px;
+  left: -3px;
+  width: 15px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 999px;
+  content: "";
+}
+
+.trash-icon::after {
+  position: absolute;
+  top: -8px;
+  left: 3px;
+  width: 5px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 999px;
+  content: "";
 }
 
 .play-area {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+  overflow: hidden;
   background: #ffffff;
 }
 
@@ -262,8 +366,9 @@ select:disabled {
 
 .state-block {
   display: grid;
+  flex: 1 1 auto;
   place-items: center;
-  min-height: 360px;
+  min-height: 0;
   padding: 24px;
   text-align: center;
 }
@@ -298,10 +403,13 @@ select:disabled {
 .messages {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  flex: 1 1 auto;
+  gap: 10px;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px;
+  padding: 18px 20px 28px;
+  scroll-padding-bottom: 28px;
+  scroll-behavior: smooth;
 }
 
 .message {
@@ -318,13 +426,22 @@ select:disabled {
   border-color: #98d5c0;
 }
 
+.message--answer {
+  width: fit-content;
+  max-width: min(70%, 520px);
+}
+
 .message--assistant {
   align-self: flex-start;
   background: #f6f8fb;
 }
 
+.message--answered {
+  padding-bottom: 12px;
+}
+
 .message--guess {
-  width: min(96%, 900px);
+  width: min(100%, 980px);
   padding: 0;
   overflow: hidden;
 }
@@ -351,19 +468,37 @@ select:disabled {
   line-height: 1.5;
 }
 
+.answer-inline {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 10px;
+  padding: 4px 10px;
+  color: #176273;
+  background: #eaf7f2;
+  border: 1px solid #98d5c0;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
 .guess-card {
   display: grid;
-  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
   padding: 14px;
 }
 
 .guess-card img {
   width: 100%;
-  height: 100%;
-  max-height: 320px;
-  object-fit: cover;
-  background: #e4e9f0;
+  height: clamp(360px, 48vh, 520px);
+  object-fit: contain;
+  object-position: center top;
+  padding: 8px;
+  background: #eef2f6;
+  border: 1px solid #d8e0ea;
   border-radius: 6px;
 }
 
@@ -400,11 +535,30 @@ select:disabled {
   gap: 10px;
 }
 
+.judgment-button--correct,
+.answer-button--unknown {
+  background: #1f7a8c;
+}
+
+.judgment-button--wrong,
+.answer-button--no {
+  background: #9b2c2c;
+}
+
+.answer-button--yes {
+  background: #21784a;
+}
+
+.answer-button--yes:hover:not(:disabled) {
+  background: #166037;
+}
+
 .answer-bar {
-  min-height: 74px;
+  min-height: 78px;
   padding: 16px 20px;
   border-top: 1px solid #e4e9f0;
   background: #f8fafc;
+  box-shadow: 0 -10px 22px rgba(24, 33, 47, 0.06);
 }
 
 .answer-bar button {
@@ -437,6 +591,7 @@ select:disabled {
 @media (max-width: 1120px) {
   .game-layout {
     grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(120px, 22vh);
   }
 
   .leaderboard {
@@ -452,27 +607,35 @@ select:disabled {
   }
 
   .workspace {
-    min-height: 100vh;
     border: 0;
     border-radius: 0;
   }
 
   .topbar,
   .topbar-actions,
-  .game-layout,
   .guess-card {
     display: flex;
     flex-direction: column;
     align-items: stretch;
   }
 
+  .topbar {
+    gap: 12px;
+    padding: 14px;
+  }
+
   .model-picker {
     min-width: 0;
   }
 
+  .game-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(110px, 17vh) minmax(0, 1fr) minmax(96px, 16vh);
+  }
+
   .sidebar,
   .leaderboard {
-    max-height: none;
+    padding: 12px 14px;
     border-right: 0;
     border-left: 0;
   }
@@ -481,14 +644,41 @@ select:disabled {
     border-bottom: 1px solid #d8e0ea;
   }
 
+  .leaderboard {
+    grid-column: auto;
+    border-top: 1px solid #d8e0ea;
+  }
+
+  .session-card {
+    margin-bottom: 8px;
+  }
+
   .message,
   .message--guess {
     width: 100%;
   }
 
-  .session-header,
+  .messages {
+    padding: 14px;
+  }
+
+  .session-header {
+    align-items: stretch;
+    padding: 14px;
+  }
+
   .answer-bar {
     align-items: stretch;
-    flex-direction: column;
+    justify-content: stretch;
+    padding: 12px 14px;
+  }
+
+  .answer-bar button {
+    min-width: 0;
+    flex: 1 1 92px;
+  }
+
+  .guess-card img {
+    height: clamp(380px, 58vh, 560px);
   }
 }

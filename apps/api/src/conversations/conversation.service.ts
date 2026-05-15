@@ -24,7 +24,7 @@ import {
   SessionsResponse
 } from "./conversation.types.js";
 
-const MAX_QUESTIONS = 10;
+const MAX_QUESTIONS = 20;
 
 interface OwnerInput {
   ownerId: string;
@@ -83,6 +83,11 @@ export class ConversationService {
   async getSession(input: SessionInput): Promise<GameSessionResponse> {
     const conversation = await this.readSession(input.ownerId, input.sessionId);
     return this.toSessionResponse(conversation);
+  }
+
+  async deleteSession(input: SessionInput): Promise<void> {
+    const conversation = await this.readSession(input.ownerId, input.sessionId);
+    await this.repository.deleteSession(conversation.id);
   }
 
   async submitAnswer(input: SubmitAnswerInput): Promise<GameSessionResponse> {

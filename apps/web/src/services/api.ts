@@ -133,6 +133,14 @@ export async function fetchSession(ownerId: string, sessionId: string): Promise<
   return readJson<GameSession>(response);
 }
 
+export async function deleteSession(ownerId: string, sessionId: string): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    headers: ownerHeaders(ownerId),
+    method: "DELETE"
+  });
+  await readEmpty(response);
+}
+
 export async function submitAnswer(
   ownerId: string,
   sessionId: string,
@@ -202,4 +210,11 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+async function readEmpty(response: Response): Promise<void> {
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Request failed with status ${response.status}.`);
+  }
 }

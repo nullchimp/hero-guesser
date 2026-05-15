@@ -206,6 +206,14 @@ export class ConversationRepository {
     });
   }
 
+  async deleteSession(conversationId: string): Promise<void> {
+    await this.prisma.conversation.delete({
+      where: {
+        id: conversationId
+      }
+    });
+  }
+
   async listCompletedSessions(): Promise<ConversationRecord[]> {
     const conversations = await this.prisma.conversation.findMany({
       where: {

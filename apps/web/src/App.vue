@@ -60,21 +60,43 @@
           >
             No saved games yet.
           </p>
-          <button
+          <article
             v-for="session in sessions"
             :key="session.sessionId"
-            class="session-row"
-            :class="{ 'session-row--active': session.sessionId === activeSession?.sessionId }"
-            type="button"
-            :disabled="isBusy"
-            @click="selectSession(session.sessionId)"
+            class="session-card"
+            :class="{ 'session-card--active': session.sessionId === activeSession?.sessionId }"
           >
-            <span>{{ session.model }}</span>
-            <strong>{{ formatStatus(session.status) }}</strong>
-            <small>{{ session.questionsAsked }}/{{ session.maxQuestions }} questions</small>
-            <small v-if="session.pendingGuessName">Guess: {{ session.pendingGuessName }}</small>
-            <small v-else-if="session.lastMessage">{{ session.lastMessage }}</small>
-          </button>
+            <button
+              class="session-main"
+              type="button"
+              :disabled="isBusy"
+              :aria-label="`Open session ${session.sessionId}`"
+              @click="selectSession(session.sessionId)"
+            >
+              <span class="session-model">{{ session.model }}</span>
+              <span class="session-status">
+                <strong>{{ formatStatus(session.status) }}</strong>
+                <small>{{ session.questionsAsked }}/{{ session.maxQuestions }} questions</small>
+              </span>
+              <small v-if="session.pendingGuessName">Guess: {{ session.pendingGuessName }}</small>
+              <small v-else-if="session.lastMessage">{{ session.lastMessage }}</small>
+            </button>
+            <div class="session-actions">
+              <button
+                class="session-delete-action"
+                type="button"
+                :disabled="isBusy"
+                title="Delete session"
+                :aria-label="`Delete session ${session.sessionId}`"
+                @click="deleteSavedSession(session.sessionId)"
+              >
+                <span
+                  class="trash-icon"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+          </article>
         </aside>
 
         <section
@@ -118,75 +140,89 @@
             </header>
 
             <section
+              ref="messagesPanel"
               class="messages"
               aria-label="Game history"
             >
               <article
-                v-for="message in activeSession.messages"
-                :key="message.id"
+                v-for="entry in transcript"
+                :key="entry.message.id"
                 class="message"
-                :class="[`message--${message.role}`, `message--${message.kind}`]"
+                :class="[
+                  `message--${entry.message.role}`,
+                  `message--${entry.message.kind}`,
+                  { 'message--answered': entry.attachedAnswer !== null }
+                ]"
               >
                 <div class="message-meta">
-                  <span>{{ messageLabel(message) }}</span>
-                  <time :datetime="message.createdAt">{{ formatTime(message.createdAt) }}</time>
+                  <span>{{ messageLabel(entry.message) }}</span>
+                  <time :datetime="entry.message.createdAt">{{ formatTime(entry.message.createdAt) }}</time>
                 </div>
 
-                <template v-if="message.kind === 'guess' && message.guess !== null">
+                <template v-if="entry.message.kind === 'guess' && entry.message.guess !== null">
                   <div class="guess-card">
                     <img
-                      :src="message.guess.imageUrl"
-                      :alt="message.guess.articleTitle"
+                      :src="entry.message.guess.imageUrl"
+                      :alt="entry.message.guess.articleTitle"
+                      @load="scrollMessagesToBottom"
                     >
                     <div class="guess-body">
                       <div class="guess-title">
-                        <h3>{{ message.guess.name }}</h3>
-                        <span>{{ message.guess.confidence }} confidence</span>
+                        <h3>{{ entry.message.guess.name }}</h3>
+                        <span>{{ entry.message.guess.confidence }} confidence</span>
                       </div>
-                      <p>{{ message.guess.rationale }}</p>
-                      <p>{{ message.guess.articleExtract }}</p>
+                      <p>{{ entry.message.guess.rationale }}</p>
+                      <p>{{ entry.message.guess.articleExtract }}</p>
                       <a
-                        :href="message.guess.articleUrl"
+                        :href="entry.message.guess.articleUrl"
                         target="_blank"
                         rel="noreferrer"
                       >
-                        {{ message.guess.articleTitle }} on Wikipedia
+                        {{ entry.message.guess.articleTitle }} on Wikipedia
                       </a>
                       <div
-                        v-if="message.guess.status === 'pending' && activeSession.status === 'active'"
+                        v-if="entry.message.guess.status === 'pending' && activeSession.status === 'active'"
                         class="judgment-actions"
                       >
                         <button
+                          class="judgment-button judgment-button--correct"
                           type="button"
                           :disabled="isBusy"
-                          @click="judge(message.guess.id, 'correct')"
+                          @click="judge(entry.message.guess.id, 'correct')"
                         >
                           Correct
                         </button>
                         <button
+                          class="judgment-button judgment-button--wrong"
                           type="button"
                           :disabled="isBusy"
-                          @click="judge(message.guess.id, 'wrong')"
+                          @click="judge(entry.message.guess.id, 'wrong')"
                         >
                           Wrong
                         </button>
                       </div>
-                      <small v-else>Marked {{ message.guess.status }}</small>
+                      <small v-else>Marked {{ entry.message.guess.status }}</small>
                     </div>
                   </div>
                 </template>
 
                 <p v-else>
-                  {{ message.content }}
+                  {{ entry.message.content }}
+                </p>
+                <p
+                  v-if="entry.attachedAnswer !== null"
+                  class="answer-inline"
+                  :aria-label="`You answered ${entry.attachedAnswer.content}`"
+                >
+                  {{ formatAnswer(entry.attachedAnswer.content) }}
                 </p>
               </article>
-              <div
-                ref="scrollAnchor"
-                aria-hidden="true"
-              />
             </section>
 
-            <div class="answer-bar">
+            <div
+              v-if="showAnswerBar"
+              class="answer-bar"
+            >
               <template v-if="isBusy">
                 <p role="status">
                   Thinking...
@@ -194,18 +230,21 @@
               </template>
               <template v-else-if="canAnswer">
                 <button
+                  class="answer-button answer-button--yes"
                   type="button"
                   @click="answer('yes')"
                 >
                   Yes
                 </button>
                 <button
+                  class="answer-button answer-button--no"
                   type="button"
                   @click="answer('no')"
                 >
                   No
                 </button>
                 <button
+                  class="answer-button answer-button--unknown"
                   type="button"
                   @click="answer('unknown')"
                 >
@@ -280,6 +319,7 @@ import {
   PlayerAnswer,
   SessionSummary,
   createSession,
+  deleteSession,
   fetchLeaderboard,
   fetchModels,
   fetchSession,
@@ -298,13 +338,36 @@ const leaderboard = ref<LeaderboardEntry[]>([]);
 const isLoading = ref(true);
 const isBusy = ref(false);
 const errorMessage = ref("");
-const scrollAnchor = ref<HTMLDivElement | null>(null);
+const messagesPanel = ref<HTMLElement | null>(null);
+
+interface TranscriptEntry {
+  attachedAnswer: ConversationMessage | null;
+  message: ConversationMessage;
+}
 
 const ownerLabel = computed(() => `Player ${ownerId.slice(0, 8)}`);
 const canStartGame = computed(() => selectedModel.value.length > 0 && !isLoading.value && !isBusy.value);
 const pendingGuess = computed(() => activeSession.value?.messages.find(
   (message) => message.guess?.status === "pending"
 )?.guess ?? null);
+const transcript = computed<TranscriptEntry[]>(() => {
+  const messages = activeSession.value?.messages ?? [];
+
+  return messages.flatMap((message, index) => {
+    if (message.kind === "answer" && messages[index - 1]?.kind === "question") {
+      return [];
+    }
+
+    return [
+      {
+        attachedAnswer: message.kind === "question" && messages[index + 1]?.kind === "answer"
+          ? messages[index + 1]
+          : null,
+        message
+      }
+    ];
+  });
+});
 const canAnswer = computed(() => {
   if (activeSession.value === null || activeSession.value.status !== "active" || pendingGuess.value !== null) {
     return false;
@@ -312,6 +375,7 @@ const canAnswer = computed(() => {
 
   return activeSession.value.messages.at(-1)?.kind === "question";
 });
+const showAnswerBar = computed(() => isBusy.value || canAnswer.value || pendingGuess.value === null);
 const completionText = computed(() => {
   if (activeSession.value?.status === "won") {
     return "The model won this round.";
@@ -351,7 +415,7 @@ watch(
   activeSession,
   async () => {
     await nextTick();
-    scrollAnchor.value?.scrollIntoView({ behavior: "smooth", block: "end" });
+    scrollMessagesToBottom();
   },
   { deep: true }
 );
@@ -366,6 +430,42 @@ async function startGame(): Promise<void> {
 async function selectSession(sessionId: string): Promise<void> {
   await runAction(async () => {
     activeSession.value = await fetchSession(ownerId, sessionId);
+  });
+}
+
+async function deleteSavedSession(sessionId: string): Promise<void> {
+  await runAction(async () => {
+    const deletedActiveSession = activeSession.value?.sessionId === sessionId;
+
+    await deleteSession(ownerId, sessionId);
+    await refreshLists();
+
+    if (deletedActiveSession) {
+      activeSession.value = null;
+
+      if (sessions.value.length > 0) {
+        activeSession.value = await fetchSession(ownerId, sessions.value[0].sessionId);
+      }
+    }
+  });
+}
+
+function scrollMessagesToBottom(): void {
+  const panel = messagesPanel.value;
+
+  if (panel === null) {
+    return;
+  }
+
+  panel.scrollTop = panel.scrollHeight;
+
+  const scheduleFrame = globalThis.requestAnimationFrame ?? ((callback: FrameRequestCallback) => {
+    globalThis.setTimeout(() => callback(Date.now()), 0);
+    return 0;
+  });
+
+  scheduleFrame(() => {
+    panel.scrollTop = panel.scrollHeight;
   });
 }
 
@@ -440,6 +540,22 @@ function formatStatus(status: string): string {
   }
 
   return "Active";
+}
+
+function formatAnswer(value: string): string {
+  if (value === "yes") {
+    return "Yes";
+  }
+
+  if (value === "no") {
+    return "No";
+  }
+
+  if (value === "unknown") {
+    return "Unknown";
+  }
+
+  return value;
 }
 
 function formatTime(value: string): string {
