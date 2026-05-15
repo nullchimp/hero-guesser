@@ -51,14 +51,14 @@
           aria-label="Saved sessions"
         >
           <div class="panel-heading">
-            <h2>Sessions</h2>
+            <h2>Case Files</h2>
             <span>{{ sessions.length }}</span>
           </div>
           <p
             v-if="sessions.length === 0"
             class="empty-line"
           >
-            No saved games yet.
+            No case files yet. Crack open a new investigation.
           </p>
           <article
             v-for="session in sessions"
@@ -272,14 +272,14 @@
           aria-label="Model leaderboard"
         >
           <div class="panel-heading">
-            <h2>Leaderboard</h2>
+            <h2>Hall of Fame</h2>
             <span>{{ leaderboard.length }}</span>
           </div>
           <p
             v-if="leaderboard.length === 0"
             class="empty-line"
           >
-            Completed games will appear here.
+            Cracked cases land on the wall here.
           </p>
           <table v-else>
             <thead>
