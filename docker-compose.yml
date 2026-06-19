@@ -24,17 +24,19 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      CODEX_WORKSPACE: ${CODEX_WORKSPACE:-/workspace/codex-workspace}
       DATABASE_URL: ${DATABASE_URL:-mysql://hero:hero_password@mysql:3306/hero_guesser}
-      DEFAULT_MODEL: ${DEFAULT_MODEL:-gpt-5.3-codex}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-gpt-5.4}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-at-least-32-characters}
       MODEL_ALLOWLIST: ${MODEL_ALLOWLIST:-gpt-5.3-codex,gpt-5.4,gpt-5.4-mini}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      COPILOT_GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:-}
+      COPILOT_HOME: /var/lib/copilot-home
       PORT: 3000
       WIKIPEDIA_USER_AGENT: ${WIKIPEDIA_USER_AGENT:-HeroGuesser/0.1 (https://github.com/nullchimp/hero-guesser)}
     ports:
       - "3000:3000"
+    volumes:
+      - hero-guesser-copilot-home:/var/lib/copilot-home
 
   web:
     build:
@@ -65,3 +67,4 @@ services:
 volumes:
   hero-guesser-mysql:
   hero-guesser-test-node-modules:
+  hero-guesser-copilot-home:

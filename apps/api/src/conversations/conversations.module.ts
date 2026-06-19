@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
-import { CodexModule } from "../codex/codex.module.js";
+import { CopilotModule } from "../copilot/copilot.module.js";
 import { AppConfigModule } from "../config/app-config.module.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
 import { WikipediaModule } from "../wikipedia/wikipedia.module.js";
@@ -12,7 +12,7 @@ import { ConversationsController } from "./conversations.controller.js";
   imports: [
     AppConfigModule,
     AuthModule,
-    CodexModule,
+    CopilotModule,
     PrismaModule,
     WikipediaModule
   ],

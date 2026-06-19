@@ -1,4 +1,0 @@
-interface:
-  display_name: "Hero Guesser Clean Code Review"
-  short_description: "Critical clean-code assessment"
-  default_prompt: "Use $hero-guesser-clean-code-review to assess this codebase critically against clean code principles."

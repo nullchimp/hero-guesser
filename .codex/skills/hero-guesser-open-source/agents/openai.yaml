@@ -1,4 +1,0 @@
-interface:
-  display_name: "Hero Guesser Open Source"
-  short_description: "Project open source stewardship"
-  default_prompt: "Use $hero-guesser-open-source to prepare this project for responsible open source release."

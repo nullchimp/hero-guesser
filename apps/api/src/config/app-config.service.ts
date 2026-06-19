@@ -6,8 +6,15 @@ import { JwtSignOptions } from "@nestjs/jwt";
 export class AppConfigService {
   constructor(private readonly configService: ConfigService) {}
 
-  get codexWorkspace(): string {
-    return this.getString("CODEX_WORKSPACE");
+  get copilotToken(): string {
+    return this.getString("COPILOT_GITHUB_TOKEN");
+  }
+
+  get copilotHome(): string | undefined {
+    const value = this.configService.get<string>("COPILOT_HOME");
+    const trimmed = value?.trim();
+
+    return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
   }
 
   get databaseUrl(): string {
@@ -23,10 +30,6 @@ export class AppConfigService {
       .split(",")
       .map((model) => model.trim())
       .filter(Boolean);
-  }
-
-  get openAiApiKey(): string {
-    return this.getString("OPENAI_API_KEY");
   }
 
   get jwtExpiresIn(): JwtSignOptions["expiresIn"] {

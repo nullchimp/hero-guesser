@@ -1,11 +1,11 @@
 # Hero Guesser
 
-Hero Guesser is a small Dockerized game app where the player silently thinks of a superhero or villain and a selected Codex model tries to guess the character. It uses Vue, NestJS, MySQL, Prisma, Wikipedia metadata, and the OpenAI Codex SDK.
+Hero Guesser is a small Dockerized game app where the player silently thinks of a superhero or villain and a selected Copilot model tries to guess the character. It uses Vue, NestJS, MySQL, Prisma, Wikipedia metadata, and the official [GitHub Copilot SDK](https://github.com/github/copilot-sdk) (`@github/copilot-sdk`), which embeds the Copilot CLI runtime in the API process.
 
 ## Requirements
 
 - Docker with Docker Compose
-- An OpenAI API key for live Codex SDK responses
+- A GitHub token with Copilot access (`COPILOT_GITHUB_TOKEN`)
 
 The application is designed to run through Docker Compose. Local Node commands are primarily for maintainers updating dependencies or troubleshooting.
 
@@ -17,7 +17,7 @@ The application is designed to run through Docker Compose. Local Node commands a
    cp .env.example .env
    ```
 
-2. Set `OPENAI_API_KEY` in `.env`.
+2. Set `COPILOT_GITHUB_TOKEN` in `.env`.
 
 3. Start the full stack:
 
@@ -27,7 +27,7 @@ The application is designed to run through Docker Compose. Local Node commands a
 
 4. Open `http://localhost:8080`, register a heroname, and start playing.
 
-MySQL data is stored in the `hero-guesser-mysql` Docker volume, so conversation history survives container restarts.
+MySQL data is stored in the `hero-guesser-mysql` Docker volume, so conversation history survives container restarts. The GitHub Copilot SDK's per-conversation session state is stored in the `hero-guesser-copilot-home` named volume (mounted at `/var/lib/copilot-home` inside the API container), so in-flight games can resume after the API container is restarted.
 
 The API container runs Prisma migrations on startup. If you need to apply migrations manually while using Docker, run them inside the Compose network:
 
@@ -43,14 +43,16 @@ docker compose exec api npm run prisma:migrate -w @hero-guesser/api
 
 ## Configuration
 
-- `OPENAI_API_KEY`: server-side key used by the Codex SDK.
-- `DEFAULT_MODEL`: model selected by default, currently `gpt-5.3-codex`.
+- `COPILOT_GITHUB_TOKEN`: GitHub personal access token (classic or fine-grained) from an account with an **active Copilot Individual, Business, or Enterprise subscription**. No special OAuth scopes needed — Copilot access is verified account-side. Keep this server-side only.
+- `COPILOT_HOME`: Filesystem path used by the GitHub Copilot SDK runtime (Copilot CLI) to persist per-conversation session state. Set automatically by `docker-compose.yml` to `/var/lib/copilot-home`, which is backed by the named Docker volume `hero-guesser-copilot-home`. **Do not point this at your host `~/.copilot` directory**; the volume is intentionally isolated from any user-local Copilot CLI state.
+- `DEFAULT_MODEL`: model selected by default, currently `gpt-5.4`.
 - `MODEL_ALLOWLIST`: comma-separated list exposed to the frontend model picker.
 - `JWT_SECRET`: secret used to sign login tokens. Use a random value with at least 32 characters outside local development.
 - `JWT_EXPIRES_IN`: login token lifetime, defaulting to `7d`.
 - `DATABASE_URL`: MySQL connection string used by Prisma.
-- `CODEX_WORKSPACE`: controlled workspace path used by Codex SDK runs inside the API container.
 - `WIKIPEDIA_USER_AGENT`: user-agent string sent by the API when looking up English Wikipedia articles and images for model guesses.
+
+> **Security:** keep `COPILOT_GITHUB_TOKEN` server-side in Docker environment variables — never commit it to the repository. Report security vulnerabilities by opening a GitHub issue marked with the `security` label.
 
 ## Gameplay
 

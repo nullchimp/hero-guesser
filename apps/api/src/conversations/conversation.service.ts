@@ -5,7 +5,7 @@ import {
   NotFoundException
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { CodexGateway, HeroGameMove } from "../codex/codex.gateway.js";
+import { CopilotGateway, HeroGameMove } from "../copilot/copilot.gateway.js";
 import { ModelCatalog } from "../config/model-catalog.service.js";
 import { WikipediaService } from "../wikipedia/wikipedia.service.js";
 import { ConversationRepository } from "./conversation.repository.js";
@@ -51,7 +51,7 @@ interface JudgeGuessInput extends SessionInput {
 export class ConversationService {
   constructor(
     private readonly repository: ConversationRepository,
-    private readonly codexGateway: CodexGateway,
+    private readonly copilotGateway: CopilotGateway,
     private readonly modelCatalog: ModelCatalog,
     private readonly wikipedia: WikipediaService
   ) {}
@@ -104,7 +104,7 @@ export class ConversationService {
       throw new BadRequestException("The session is not waiting for an answer.");
     }
 
-    await this.repository.createMessage({
+    const answerMessage = await this.repository.createMessage({
       content: input.answer,
       conversationId: conversation.id,
       kind: "answer",
@@ -113,7 +113,12 @@ export class ConversationService {
       status: "complete"
     });
 
-    return this.advanceAi(conversation);
+    try {
+      return await this.advanceAi(conversation);
+    } catch (error) {
+      await this.repository.deleteMessage(answerMessage.id);
+      throw error;
+    }
   }
 
   async judgeGuess(input: JudgeGuessInput): Promise<GameSessionResponse> {
@@ -142,7 +147,12 @@ export class ConversationService {
       return this.toSessionResponse(completed);
     }
 
-    return this.advanceAi(conversation);
+    try {
+      return await this.advanceAi(conversation);
+    } catch (error) {
+      await this.repository.updateGuessStatus(guess.id, "pending");
+      throw error;
+    }
   }
 
   async getLeaderboard(): Promise<LeaderboardEntry[]> {
@@ -202,27 +212,25 @@ export class ConversationService {
     options: { forceQuestion?: boolean } = {}
   ): Promise<GameSessionResponse> {
     let blockedGuessFeedback: string | undefined;
+    const messages = await this.repository.listMessages(conversation.id);
+    const lastAnswer = findLastAnswer(messages);
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const messages = await this.repository.listMessages(conversation.id);
-      const guesses = await this.repository.listGuesses(conversation.id);
-      const result = await this.codexGateway.requestMove({
+      const result = await this.copilotGateway.requestMove({
         blockedGuessFeedback,
-        codexThreadId: conversation.codexThreadId,
+        copilotSessionId: conversation.copilotSessionId,
         forceQuestion: options.forceQuestion === true && attempt === 0,
-        guesses,
-        history: messages,
+        lastAnswer: attempt === 0 ? lastAnswer : undefined,
         maxQuestions: MAX_QUESTIONS,
         model: conversation.model,
         questionsAsked: conversation.questionsAsked
       });
 
-      if (result.codexThreadId !== null && result.codexThreadId !== conversation.codexThreadId) {
-        await this.repository.updateCodexThread(conversation.id, result.codexThreadId);
-        conversation = {
-          ...conversation,
-          codexThreadId: result.codexThreadId
-        };
+      if (conversation.copilotSessionId === null) {
+        conversation = await this.repository.setCopilotSessionId(
+          conversation.id,
+          result.copilotSessionId
+        );
       }
 
       if (result.move.move === "question") {
@@ -260,7 +268,7 @@ export class ConversationService {
       ].join(" ");
     }
 
-    throw new BadGatewayException("Codex did not return a playable move.");
+    throw new BadGatewayException("Copilot did not return a playable move.");
   }
 
   private async persistGuessMove(
@@ -397,6 +405,18 @@ function summarizeMessage(message: MessageRecord): string {
   }
 
   return message.content;
+}
+
+function findLastAnswer(messages: MessageRecord[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+
+    if (message.kind === "answer") {
+      return message.content;
+    }
+  }
+
+  return undefined;
 }
 
 function compareLeaderboardEntries(a: LeaderboardEntry, b: LeaderboardEntry): number {

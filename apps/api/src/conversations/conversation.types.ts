@@ -7,8 +7,8 @@ export type PlayerAnswer = "yes" | "no" | "unknown";
 export type GuessVerdict = "correct" | "wrong";
 
 export interface ConversationRecord {
-  codexThreadId: string | null;
   completedAt: Date | null;
+  copilotSessionId: string | null;
   createdAt: Date;
   id: string;
   model: string;

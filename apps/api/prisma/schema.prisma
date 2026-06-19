@@ -50,10 +50,10 @@ model Conversation {
   id            String    @id @default(cuid())
   sessionId     String    @unique
   ownerId       String?
-  codexThreadId String?
   model         String
   status        GameStatus @default(ACTIVE)
   questionsAsked Int      @default(0)
+  copilotSessionId String? @unique
   completedAt   DateTime?
   messages      Message[]
   guesses       Guess[]

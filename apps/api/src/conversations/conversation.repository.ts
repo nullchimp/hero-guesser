@@ -130,12 +130,34 @@ export class ConversationRepository {
     return mapMessage(message);
   }
 
+  async deleteMessage(messageId: string): Promise<void> {
+    await this.prisma.message.delete({
+      where: { id: messageId }
+    });
+  }
+
   async incrementQuestions(conversationId: string): Promise<ConversationRecord> {
     const conversation = await this.prisma.conversation.update({
       data: {
         questionsAsked: {
           increment: 1
         }
+      },
+      where: {
+        id: conversationId
+      }
+    });
+
+    return mapConversation(conversation);
+  }
+
+  async setCopilotSessionId(
+    conversationId: string,
+    copilotSessionId: string
+  ): Promise<ConversationRecord> {
+    const conversation = await this.prisma.conversation.update({
+      data: {
+        copilotSessionId
       },
       where: {
         id: conversationId
@@ -195,17 +217,6 @@ export class ConversationRepository {
     return mapConversation(conversation);
   }
 
-  async updateCodexThread(conversationId: string, codexThreadId: string): Promise<void> {
-    await this.prisma.conversation.update({
-      data: {
-        codexThreadId
-      },
-      where: {
-        id: conversationId
-      }
-    });
-  }
-
   async deleteSession(conversationId: string): Promise<void> {
     await this.prisma.conversation.delete({
       where: {
@@ -231,8 +242,8 @@ export class ConversationRepository {
 }
 
 interface PrismaConversation {
-  codexThreadId: string | null;
   completedAt: Date | null;
+  copilotSessionId: string | null;
   createdAt: Date;
   id: string;
   model: string;
@@ -275,8 +286,8 @@ interface PrismaGuess {
 
 function mapConversation(conversation: PrismaConversation): ConversationRecord {
   return {
-    codexThreadId: conversation.codexThreadId,
     completedAt: conversation.completedAt,
+    copilotSessionId: conversation.copilotSessionId,
     createdAt: conversation.createdAt,
     id: conversation.id,
     model: conversation.model,

@@ -1,4 +1,4 @@
-import { CodexGateway, HeroGameMove } from "../src/codex/codex.gateway.js";
+import { CopilotGateway, HeroGameMove } from "../src/copilot/copilot.gateway.js";
 import { ModelCatalog } from "../src/config/model-catalog.service.js";
 import { ConversationRepository } from "../src/conversations/conversation.repository.js";
 import { ConversationService } from "../src/conversations/conversation.service.js";
@@ -18,7 +18,7 @@ describe("ConversationService game sessions", () => {
   it("starts a model-locked session and lets the AI ask the opening question", async () => {
     const repository = new FakeConversationRepository();
     const service = createService({
-      codexMoves: [
+      copilotMoves: [
         {
           move: "question",
           question: "Is your character from DC Comics?"
@@ -52,7 +52,7 @@ describe("ConversationService game sessions", () => {
   it("records a wrong guess and continues asking while question tries remain", async () => {
     const repository = new FakeConversationRepository();
     const service = createService({
-      codexMoves: [
+      copilotMoves: [
         {
           move: "question",
           question: "Is your character usually heroic?"
@@ -130,9 +130,9 @@ describe("ConversationService game sessions", () => {
       name: "Batman",
       rationale: "The pattern points to Batman."
     });
-    const codex = new FakeCodexGateway([]);
+    const copilot = new FakeCopilotGateway([]);
     const service = createService({
-      codexGateway: codex,
+      copilotGateway: copilot,
       repository
     });
 
@@ -145,7 +145,7 @@ describe("ConversationService game sessions", () => {
 
     expect(session.status).toBe("lost");
     expect(session.completedAt).not.toBeNull();
-    expect(codex.calls).toHaveLength(0);
+    expect(copilot.calls).toHaveLength(0);
   });
 
   it("deletes an owned session from future session lists", async () => {
@@ -193,6 +193,89 @@ describe("ConversationService game sessions", () => {
     })).resolves.toMatchObject({
       sessionId: conversation.sessionId
     });
+  });
+
+  it("rolls back the persisted answer message when advancing the AI fails", async () => {
+    const repository = new FakeConversationRepository();
+    const error = new Error("Copilot exploded.");
+    const service = createService({
+      copilotGateway: new FakeCopilotGateway([
+        {
+          move: "question",
+          question: "Is your character from Marvel Comics?"
+        },
+        error
+      ]),
+      repository
+    });
+
+    const started = await service.startSession({
+      ownerId: "browser-owner-1"
+    });
+
+    await expect(service.submitAnswer({
+      answer: "yes",
+      ownerId: "browser-owner-1",
+      sessionId: started.sessionId
+    })).rejects.toThrow("Copilot exploded.");
+
+    expect(repository.deletedMessageIds).toEqual(["message-2"]);
+    expect(repository.messages).toHaveLength(1);
+    expect(repository.messages[0]).toMatchObject({
+      content: "Is your character from Marvel Comics?",
+      kind: "question"
+    });
+  });
+
+  it("restores a wrong guess to pending when advancing the AI fails", async () => {
+    const repository = new FakeConversationRepository();
+    const error = new Error("Copilot exploded.");
+    const service = createService({
+      copilotGateway: new FakeCopilotGateway([
+        {
+          move: "question",
+          question: "Is your character usually heroic?"
+        },
+        {
+          confidence: "high",
+          move: "guess",
+          name: "Batman",
+          rationale: "The answers point to a human DC hero.",
+          wikipediaSearchTitle: "Batman"
+        },
+        error
+      ]),
+      repository
+    });
+
+    const started = await service.startSession({
+      ownerId: "browser-owner-1"
+    });
+    const withGuess = await service.submitAnswer({
+      answer: "yes",
+      ownerId: "browser-owner-1",
+      sessionId: started.sessionId
+    });
+    const guess = withGuess.guesses[0];
+
+    await expect(service.judgeGuess({
+      guessId: guess.id,
+      ownerId: "browser-owner-1",
+      sessionId: started.sessionId,
+      verdict: "wrong"
+    })).rejects.toThrow("Copilot exploded.");
+
+    expect(repository.guesses[0].status).toBe("pending");
+    expect(repository.guessStatusUpdates).toEqual([
+      {
+        guessId: guess.id,
+        status: "wrong"
+      },
+      {
+        guessId: guess.id,
+        status: "pending"
+      }
+    ]);
   });
 
   it("ranks the global model leaderboard by win rate and average winning tries", async () => {
@@ -249,14 +332,14 @@ describe("ConversationService game sessions", () => {
 });
 
 function createService(options: {
-  codexGateway?: FakeCodexGateway;
-  codexMoves?: HeroGameMove[];
+  copilotGateway?: FakeCopilotGateway;
+  copilotMoves?: HeroGameMove[];
   repository?: FakeConversationRepository;
   wikipedia?: FakeWikipediaService;
 } = {}): ConversationService {
   return new ConversationService(
     (options.repository ?? new FakeConversationRepository()) as unknown as ConversationRepository,
-    (options.codexGateway ?? new FakeCodexGateway(options.codexMoves ?? [])) as unknown as CodexGateway,
+    (options.copilotGateway ?? new FakeCopilotGateway(options.copilotMoves ?? [])) as unknown as CopilotGateway,
     new FakeModelCatalog() as unknown as ModelCatalog,
     (options.wikipedia ?? new FakeWikipediaService()) as unknown as WikipediaService
   );
@@ -264,6 +347,8 @@ function createService(options: {
 
 class FakeConversationRepository {
   readonly conversations: ConversationRecord[] = [];
+  readonly deletedMessageIds: string[] = [];
+  readonly guessStatusUpdates: Array<{ guessId: string; status: GuessStatus }> = [];
   readonly guesses: GuessRecord[] = [];
   readonly messages: MessageRecord[] = [];
 
@@ -277,6 +362,7 @@ class FakeConversationRepository {
   }
 
   seedConversation(input: {
+    copilotSessionId?: string | null;
     model?: string;
     ownerId: string;
     questionsAsked?: number;
@@ -285,8 +371,8 @@ class FakeConversationRepository {
   }): ConversationRecord {
     const now = new Date("2026-05-15T12:00:00.000Z");
     const conversation: ConversationRecord = {
-      codexThreadId: null,
       completedAt: input.status === "won" || input.status === "lost" ? now : null,
+      copilotSessionId: input.copilotSessionId ?? null,
       createdAt: now,
       id: `conversation-${this.conversations.length + 1}`,
       model: input.model ?? "gpt-5.3-codex",
@@ -346,9 +432,29 @@ class FakeConversationRepository {
     return message;
   }
 
+  async deleteMessage(messageId: string): Promise<void> {
+    const index = this.messages.findIndex((message) => message.id === messageId);
+
+    if (index < 0) {
+      throw new Error(`Missing message ${messageId}.`);
+    }
+
+    this.deletedMessageIds.push(messageId);
+    this.messages.splice(index, 1);
+  }
+
   async incrementQuestions(conversationId: string): Promise<ConversationRecord> {
     const conversation = this.readConversation(conversationId);
     conversation.questionsAsked += 1;
+    return conversation;
+  }
+
+  async setCopilotSessionId(
+    conversationId: string,
+    copilotSessionId: string
+  ): Promise<ConversationRecord> {
+    const conversation = this.readConversation(conversationId);
+    conversation.copilotSessionId = copilotSessionId;
     return conversation;
   }
 
@@ -394,6 +500,10 @@ class FakeConversationRepository {
       throw new Error(`Missing guess ${guessId}.`);
     }
 
+    this.guessStatusUpdates.push({
+      guessId,
+      status
+    });
     guess.status = status;
     return guess;
   }
@@ -403,10 +513,6 @@ class FakeConversationRepository {
     conversation.status = status;
     conversation.completedAt = new Date("2026-05-15T12:00:00.000Z");
     return conversation;
-  }
-
-  async updateCodexThread(conversationId: string, codexThreadId: string): Promise<void> {
-    this.readConversation(conversationId).codexThreadId = codexThreadId;
   }
 
   async listCompletedSessions(): Promise<ConversationRecord[]> {
@@ -446,21 +552,38 @@ class FakeConversationRepository {
   }
 }
 
-class FakeCodexGateway {
-  readonly calls: unknown[] = [];
+class FakeCopilotGateway {
+  readonly calls: Array<{ copilotSessionId: string | null; lastAnswer?: string; forceQuestion?: boolean; blockedGuessFeedback?: string }> = [];
+  private nextSessionIndex = 0;
 
-  constructor(private readonly moves: HeroGameMove[]) {}
+  constructor(private readonly moves: Array<HeroGameMove | Error>) {}
 
-  async requestMove(input: unknown): Promise<{ codexThreadId: string | null; move: HeroGameMove }> {
-    this.calls.push(input);
+  async requestMove(input: {
+    blockedGuessFeedback?: string;
+    copilotSessionId: string | null;
+    forceQuestion?: boolean;
+    lastAnswer?: string;
+  }): Promise<{ copilotSessionId: string; move: HeroGameMove }> {
+    this.calls.push({
+      blockedGuessFeedback: input.blockedGuessFeedback,
+      copilotSessionId: input.copilotSessionId,
+      forceQuestion: input.forceQuestion,
+      lastAnswer: input.lastAnswer
+    });
     const move = this.moves.shift();
 
     if (move === undefined) {
-      throw new Error("No fake Codex move queued.");
+      throw new Error("No fake Copilot move queued.");
     }
 
+    if (move instanceof Error) {
+      throw move;
+    }
+
+    const copilotSessionId = input.copilotSessionId ?? `copilot-session-${++this.nextSessionIndex}`;
+
     return {
-      codexThreadId: "codex-thread-1",
+      copilotSessionId,
       move
     };
   }

@@ -14,12 +14,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@github/copilot-sdk": "^1.0.2",
     "@nestjs/common": "^11.1.21",
     "@nestjs/config": "^4.0.2",
-    "@nestjs/core": "^11.1.21",
+    "@nestjs/core": "^11.1.27",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/platform-express": "^11.1.21",
-    "@openai/codex-sdk": "^0.130.0",
     "@prisma/client": "6.19.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "fast-check": "^3.23.2",
     "tsx": "^4.21.0",
     "vitest": "^4.0.14"
   }

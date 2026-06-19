@@ -24,10 +24,9 @@ describe("ModelCatalog", () => {
 
 function configFor(modelAllowlist: string[], defaultModel: string): AppConfigService {
   return {
-    codexWorkspace: "/tmp/codex",
     databaseUrl: "mysql://example",
     defaultModel,
     modelAllowlist,
-    openAiApiKey: "test-key"
+    copilotToken: "test-key"
   } as AppConfigService;
 }

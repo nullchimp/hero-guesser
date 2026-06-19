@@ -28,8 +28,6 @@ COPY --from=build /workspace/apps/api/dist apps/api/dist
 COPY --from=build /workspace/apps/api/prisma apps/api/prisma
 RUN npm run prisma:generate -w @hero-guesser/api
 
-RUN mkdir -p /workspace/codex-workspace
-
 EXPOSE 3000
 
 CMD ["sh", "-c", "npm run prisma:migrate -w @hero-guesser/api && npm run start -w @hero-guesser/api"]

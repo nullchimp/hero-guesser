@@ -1,8 +1,0 @@
-# Repo-local Codex configuration for Hero Guesser.
-# If your Codex installation does not auto-merge repo-local config, copy this
-# mcp_servers block into your user config for this repository.
-
-[mcp_servers.context7]
-command = "node"
-args = ["./node_modules/@upstash/context7-mcp/dist/index.js"]
-startup_timeout_sec = 20

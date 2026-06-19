@@ -23,7 +23,7 @@
     "url": "git+https://github.com/nullchimp/hero-guesser.git"
   },
   "keywords": [
-    "codex",
+    "copilot",
     "nestjs",
     "vue",
     "mysql",
@@ -43,6 +43,9 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.48.1",
     "vue-eslint-parser": "^10.4.0"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-darwin-arm64": "1.0.1"
   },
   "engines": {
     "node": ">=24.0.0",
