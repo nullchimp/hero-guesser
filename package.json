@@ -14,8 +14,10 @@
     "docker:migrate": "docker compose run --rm api npm run prisma:migrate -w @hero-guesser/api",
     "docker:test": "docker compose --profile test run --rm test",
     "docker:up": "docker compose up --build",
-    "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint:canvas && npm run lint --workspaces --if-present",
+    "lint:canvas": "eslint plugins/hero-guesser/extensions/hero-guesser-canvas --ext .mjs",
+    "test": "npm run test:canvas && npm run test --workspaces --if-present",
+    "test:canvas": "node --test plugins/hero-guesser/extensions/hero-guesser-canvas/*.test.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "repository": {

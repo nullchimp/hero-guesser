@@ -41,6 +41,31 @@ If the API container is already running and built from the current code, this al
 docker compose exec api npm run prisma:migrate -w @hero-guesser/api
 ```
 
+## GitHub Copilot App Canvas
+
+Hero Guesser can open in the GitHub Copilot App's canvas panel while using the same local web app, account, saved sessions, and leaderboard.
+
+[![Add Hero Guesser marketplace](https://img.shields.io/badge/Add_marketplace-GitHub_Copilot_App-0969da?style=for-the-badge)](https://github.com/copilot/app/launch?open=ghapp%3A%2F%2Fplugins%2Fmarketplace%2Fadd%3Fsource%3Dnullchimp%252Fhero-guesser)
+[![Install Hero Guesser](https://img.shields.io/badge/Install-Hero_Guesser-1f883d?style=for-the-badge)](https://github.com/copilot/app/launch?open=ghapp%3A%2F%2Fplugins%2Finstall%3Fsource%3Dhero-guesser%2540hero-guesser)
+
+1. Click **Add marketplace** and confirm `nullchimp/hero-guesser` in the Copilot App.
+2. Click **Install Hero Guesser** and confirm `hero-guesser@hero-guesser`.
+3. Clone this repository and start the Docker stack by following [Run The App](#run-the-app).
+4. Start a Copilot App session and ask: `Open the Hero Guesser canvas.`
+
+The buttons resolve plugin files from this repository's default branch and require confirmation in the app. If browser handoff is unavailable, install from a terminal instead:
+
+```sh
+copilot plugin marketplace add nullchimp/hero-guesser
+copilot plugin install hero-guesser@hero-guesser
+```
+
+The canvas checks `http://localhost:8080/api/models` before opening the game. If the stack is unavailable, it shows the required setup steps and retries automatically. If Docker stops after the game opens, restart it with `docker compose up --build`, then ask Copilot to check the Hero Guesser connection or reopen the canvas.
+
+> **First run:** copy `.env.example` to `.env` and set `COPILOT_GITHUB_TOKEN` before starting Docker. The extension never starts Docker, reads the token, or stores application credentials.
+
+For canvas and plugin behavior, see [Working with canvas extensions](https://docs.github.com/en/copilot/how-tos/github-copilot-app/working-with-canvas-extensions) and [Opening the GitHub Copilot App with deep links](https://docs.github.com/en/copilot/how-tos/github-copilot-app/open-with-deep-links).
+
 ## Configuration
 
 - `COPILOT_GITHUB_TOKEN`: GitHub personal access token (classic or fine-grained) from an account with an **active Copilot Individual, Business, or Enterprise subscription**. No special OAuth scopes needed — Copilot access is verified account-side. Keep this server-side only.

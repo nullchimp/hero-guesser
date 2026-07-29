@@ -1,0 +1,27 @@
+{
+  "name": "hero-guesser",
+  "owner": {
+    "name": "nullchimp"
+  },
+  "metadata": {
+    "description": "GitHub Copilot extensions for Hero Guesser.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "hero-guesser",
+      "description": "Play the local Hero Guesser web game in a GitHub Copilot canvas.",
+      "version": "0.1.0",
+      "source": "plugins/hero-guesser",
+      "homepage": "https://github.com/nullchimp/hero-guesser",
+      "repository": "https://github.com/nullchimp/hero-guesser",
+      "license": "MIT",
+      "keywords": [
+        "canvas",
+        "game",
+        "heroes",
+        "villains"
+      ]
+    }
+  ]
+}

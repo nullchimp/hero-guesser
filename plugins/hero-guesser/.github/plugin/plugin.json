@@ -1,0 +1,16 @@
+{
+  "name": "hero-guesser",
+  "description": "Play the local Hero Guesser web game in a GitHub Copilot canvas.",
+  "version": "0.1.0",
+  "author": {
+    "name": "nullchimp"
+  },
+  "license": "MIT",
+  "keywords": [
+    "canvas",
+    "game",
+    "heroes",
+    "villains"
+  ],
+  "extensions": "extensions"
+}
