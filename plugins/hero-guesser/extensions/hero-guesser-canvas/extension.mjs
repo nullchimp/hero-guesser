@@ -41,6 +41,11 @@ await joinSession({
             id: "hero-guesser",
             displayName: "Hero Guesser",
             description: "Play the local Hero Guesser web game in a Copilot canvas.",
+            inputSchema: {
+                type: "object",
+                properties: {},
+                additionalProperties: false,
+            },
             actions: [
                 {
                     name: "check_connection",

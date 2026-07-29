@@ -175,18 +175,29 @@ test("serves setup and same-origin status endpoints", async () => {
 });
 
 test("plugin and marketplace manifests register one direct canvas extension", async () => {
-    const [plugin, marketplace, extension] = await Promise.all([
+    const [plugin, marketplace, extension, preview] = await Promise.all([
         readJson(new URL("../../.github/plugin/plugin.json", import.meta.url)),
         readJson(new URL("../../../../.github/plugin/marketplace.json", import.meta.url)),
         readJson(new URL("./copilot-extension.json", import.meta.url)),
+        readFile(new URL("../../assets/preview.png", import.meta.url)),
     ]);
 
     assert.equal(plugin.name, "hero-guesser");
+    assert.equal(plugin.version, "0.1.1");
     assert.equal(plugin.extensions, "extensions");
+    assert.equal(plugin.logo, "assets/preview.png");
+    assert.ok(plugin.keywords.includes("copilot-canvas"));
+    assert.ok(plugin.keywords.includes("interactive-canvas"));
     assert.equal(marketplace.name, "hero-guesser");
+    assert.equal(marketplace.metadata.version, plugin.version);
     assert.equal(marketplace.plugins.length, 1);
     assert.equal(marketplace.plugins[0].name, "hero-guesser");
+    assert.equal(marketplace.plugins[0].version, plugin.version);
     assert.equal(marketplace.plugins[0].source, "plugins/hero-guesser");
+    assert.deepEqual(marketplace.plugins[0].keywords, plugin.keywords);
+    assert.deepEqual([...preview.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    assert.equal(preview.readUInt32BE(16), 1200);
+    assert.equal(preview.readUInt32BE(20), 675);
     assert.deepEqual(extension, {
         name: "hero-guesser-canvas",
         version: 1,
