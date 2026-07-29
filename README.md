@@ -51,7 +51,7 @@ Hero Guesser can open in the GitHub Copilot App's canvas panel while using the s
 1. Click **Add marketplace** and confirm `nullchimp/hero-guesser` in the Copilot App.
 2. Click **Install Hero Guesser** and confirm `hero-guesser@hero-guesser`.
 3. Clone this repository and start the Docker stack by following [Run The App](#run-the-app).
-4. Start a Copilot App session and ask: `Open the Hero Guesser canvas.`
+4. Select **Hero Guesser** under **Start a session from canvas**, or start any Copilot App session and ask: `Open the Hero Guesser canvas.`
 
 The buttons resolve plugin files from this repository's default branch and require confirmation in the app. If browser handoff is unavailable, install from a terminal instead:
 
