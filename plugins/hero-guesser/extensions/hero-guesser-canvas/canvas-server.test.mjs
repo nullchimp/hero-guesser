@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
     APP_URL,
+    BOOTSTRAP_URL,
     HEALTH_URL,
     closeServer,
+    prepareCanvasLaunch,
     probeHeroGuesser,
     renderSetupPage,
     startSetupServer,
@@ -13,6 +15,7 @@ import {
 test("uses the documented localhost app origin and proxied API health endpoint", () => {
     assert.equal(APP_URL, "http://localhost:8080/");
     assert.equal(HEALTH_URL, "http://localhost:8080/api/models");
+    assert.equal(BOOTSTRAP_URL, "http://127.0.0.1:3000/api/auth/canvas/bootstrap");
 });
 
 test("treats an unauthenticated API response as an available stack", async () => {
@@ -69,20 +72,84 @@ test("aborts a health check that exceeds its timeout", async () => {
     assert.match(result.reason, /timed out/);
 });
 
+test("prepares an automatic Canvas login URL after the stack is healthy", async () => {
+    const code = "a".repeat(43);
+    const result = await prepareCanvasLaunch({
+        fetchImpl: async (url, options) => {
+            if (url === HEALTH_URL) {
+                return new Response(null, { status: 401 });
+            }
+
+            assert.equal(url, BOOTSTRAP_URL);
+            assert.equal(options.method, "POST");
+            assert.equal(options.redirect, "manual");
+            return new Response(JSON.stringify({
+                code,
+                expiresAt: "2026-07-29T00:01:00.000Z",
+            }), {
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                status: 200,
+            });
+        },
+    });
+    const appUrl = new URL(result.appUrl);
+
+    assert.equal(result.available, true);
+    assert.equal(appUrl.origin, "http://localhost:8080");
+    assert.equal(appUrl.searchParams.get("canvas"), "1");
+    assert.equal(
+        new URL(`http://localhost/?${appUrl.hash.slice(1)}`).searchParams.get("code"),
+        code,
+    );
+});
+
+test("preserves bootstrap error retryability without exposing credentials", async () => {
+    const result = await prepareCanvasLaunch({
+        fetchImpl: async (url) => {
+            if (url === HEALTH_URL) {
+                return new Response(null, { status: 401 });
+            }
+
+            return new Response(JSON.stringify({
+                message: "COPILOT_GITHUB_TOKEN is invalid or expired.",
+                retryable: false,
+            }), {
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                status: 401,
+            });
+        },
+    });
+
+    assert.deepEqual(result, {
+        available: false,
+        reason: "COPILOT_GITHUB_TOKEN is invalid or expired.",
+        retryable: false,
+        status: 401,
+    });
+});
+
 test("renders actionable setup instructions without credentials", () => {
     const html = renderSetupPage();
 
     assert.match(html, /COPILOT_GITHUB_TOKEN/);
     assert.match(html, /docker compose up --build/);
     assert.match(html, /window\.location\.replace\(result\.appUrl\)/);
+    assert.match(html, /checkConnection\(\)/);
+    assert.doesNotMatch(html, /Check again/);
     assert.doesNotMatch(html, /github_pat_|ghp_/);
 });
 
 test("serves setup and same-origin status endpoints", async () => {
     const entry = await startSetupServer(async () => ({
+        appUrl: "http://localhost:8080/?canvas=1#code=bootstrap",
         available: true,
         reason: "Ready.",
-        status: 401,
+        retryable: false,
+        status: 200,
     }));
 
     try {
@@ -92,14 +159,15 @@ test("serves setup and same-origin status endpoints", async () => {
         const status = await statusResponse.json();
 
         assert.equal(pageResponse.status, 200);
-        assert.match(page, /Hero Guesser is not running yet/);
+        assert.match(page, /Hero Guesser is getting ready/);
         assert.match(pageResponse.headers.get("content-security-policy") ?? "", /connect-src 'self'/);
         assert.equal(statusResponse.headers.get("cache-control"), "no-store");
         assert.deepEqual(status, {
-            appUrl: APP_URL,
+            appUrl: "http://localhost:8080/?canvas=1#code=bootstrap",
             available: true,
             reason: "Ready.",
-            status: 401,
+            retryable: false,
+            status: 200,
         });
     } finally {
         await closeServer(entry.server);
@@ -123,6 +191,17 @@ test("plugin and marketplace manifests register one direct canvas extension", as
         name: "hero-guesser-canvas",
         version: 1,
     });
+});
+
+test("Docker and nginx expose bootstrap only on the loopback API port", async () => {
+    const [compose, nginx] = await Promise.all([
+        readFile(new URL("../../../../docker-compose.yml", import.meta.url), "utf8"),
+        readFile(new URL("../../../../apps/web/nginx.conf", import.meta.url), "utf8"),
+    ]);
+
+    assert.match(compose, /127\.0\.0\.1:3000:3000/);
+    assert.match(nginx, /location \^~ \/api\/auth\/canvas\/bootstrap/);
+    assert.match(nginx, /return 404/);
 });
 
 test("README provides encoded app links and CLI installation fallbacks", async () => {

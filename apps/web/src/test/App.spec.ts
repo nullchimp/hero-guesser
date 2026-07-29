@@ -21,6 +21,7 @@ const api = vi.hoisted(() => {
     clearSavedAuth: vi.fn(),
     createSession: vi.fn(),
     deleteSession: vi.fn(),
+    exchangeCanvasCode: vi.fn(),
     fetchMe: vi.fn(),
     fetchLeaderboard: vi.fn(),
     fetchModels: vi.fn(),
@@ -44,6 +45,7 @@ describe("App", () => {
     api.clearSavedAuth.mockReset();
     api.createSession.mockReset();
     api.deleteSession.mockReset();
+    api.exchangeCanvasCode.mockReset();
     api.fetchMe.mockReset();
     api.fetchLeaderboard.mockReset();
     api.fetchModels.mockReset();
@@ -56,6 +58,8 @@ describe("App", () => {
     api.submitAnswer.mockReset();
     scrollIntoView.mockReset();
     Element.prototype.scrollIntoView = scrollIntoView;
+    window.history.replaceState({}, "", "/");
+    window.localStorage.clear();
 
     api.getSavedAuth.mockReturnValue(authSession());
     api.fetchMe.mockResolvedValue({
@@ -85,6 +89,75 @@ describe("App", () => {
     expect(api.fetchMe).not.toHaveBeenCalled();
     expect(api.fetchModels).not.toHaveBeenCalled();
     expect(api.fetchSessions).not.toHaveBeenCalled();
+  });
+
+  it("signs in automatically in Canvas without touching browser auth storage", async () => {
+    const code = "a".repeat(43);
+    window.localStorage.setItem("hero-guesser-auth", "existing-browser-session");
+    window.history.replaceState({}, "", `/?canvas=1#code=${code}`);
+    api.getSavedAuth.mockImplementation(() => {
+      throw new Error("Canvas must not read browser auth storage.");
+    });
+    api.exchangeCanvasCode.mockResolvedValue(authSession({
+      token: "canvas-token",
+      user: {
+        heroname: "Nullchimp",
+        id: "github-user"
+      }
+    }));
+    api.fetchMe.mockResolvedValue({
+      user: {
+        heroname: "Nullchimp",
+        id: "github-user"
+      }
+    });
+    api.fetchSessions.mockResolvedValue({
+      sessions: []
+    });
+
+    render(App);
+
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(screen.getByText("Signing in with your GitHub account...")).not.toBeNull();
+    expect(window.location.hash).toBe("");
+    await waitFor(() => {
+      expect(api.exchangeCanvasCode).toHaveBeenCalledWith(code);
+    });
+    expect(await screen.findByText("Hero Nullchimp")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Logout" })).toBeNull();
+    expect(api.saveAuth).not.toHaveBeenCalled();
+    expect(api.clearSavedAuth).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("hero-guesser-auth")).toBe("existing-browser-session");
+  });
+
+  it("does not fall back to password login when a Canvas link is missing", () => {
+    window.history.replaceState({}, "", "/?canvas=1");
+    api.getSavedAuth.mockImplementation(() => {
+      throw new Error("Canvas must not read browser auth storage.");
+    });
+
+    render(App);
+
+    expect(screen.getByText(/Canvas sign-in link is missing or expired/)).not.toBeNull();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(api.exchangeCanvasCode).not.toHaveBeenCalled();
+  });
+
+  it("preserves browser auth storage when Canvas authentication expires", async () => {
+    const code = "b".repeat(43);
+    window.localStorage.setItem("hero-guesser-auth", "existing-browser-session");
+    window.history.replaceState({}, "", `/?canvas=1#code=${code}`);
+    api.exchangeCanvasCode.mockRejectedValue(
+      new api.ApiError("Canvas sign-in expired.", 401)
+    );
+
+    render(App);
+
+    expect(await screen.findByText(/Canvas sign-in expired.*Reopen Hero Guesser/s)).not.toBeNull();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(api.saveAuth).not.toHaveBeenCalled();
+    expect(api.clearSavedAuth).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("hero-guesser-auth")).toBe("existing-browser-session");
   });
 
   it("registers a new heroname, saves auth, and loads the game", async () => {

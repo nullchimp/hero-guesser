@@ -1,7 +1,36 @@
 <template>
   <main class="app-shell">
     <section
-      v-if="authSession === null"
+      v-if="authSession === null && isCanvasMode"
+      class="auth-workspace"
+      aria-labelledby="canvas-auth-title"
+    >
+      <header class="auth-header">
+        <span
+          class="brand-mark"
+          aria-hidden="true"
+        >HG</span>
+        <div>
+          <h1 id="canvas-auth-title">
+            Hero Guesser
+          </h1>
+          <p>GitHub Canvas sign-in</p>
+        </div>
+      </header>
+
+      <div class="auth-card">
+        <h2>{{ canvasAuthTitle }}</h2>
+        <p
+          class="empty-line"
+          role="status"
+        >
+          {{ canvasAuthMessage }}
+        </p>
+      </div>
+    </section>
+
+    <section
+      v-else-if="authSession === null"
       class="auth-workspace"
       aria-labelledby="auth-title"
     >
@@ -151,6 +180,7 @@
             New Game
           </button>
           <button
+            v-if="!isCanvasMode"
             class="secondary-action"
             type="button"
             :disabled="isBusy"
@@ -444,6 +474,7 @@ import {
   createSession,
   clearSavedAuth,
   deleteSession,
+  exchangeCanvasCode,
   fetchMe,
   fetchLeaderboard,
   fetchModels,
@@ -459,13 +490,25 @@ import {
 
 type AuthMode = "login" | "register";
 
-const authSession = ref<AuthSession | null>(getSavedAuth());
+interface CanvasLaunch {
+  code: string | null;
+  enabled: boolean;
+}
+
+const canvasLaunch = readCanvasLaunch();
+const isCanvasMode = canvasLaunch.enabled;
+const authSession = ref<AuthSession | null>(isCanvasMode ? null : getSavedAuth());
 const authMode = ref<AuthMode>("login");
 const authHeroname = ref("");
 const authPassword = ref("");
 const authPasswordConfirmation = ref("");
 const authErrorMessage = ref("");
-const isAuthenticating = ref(false);
+const isAuthenticating = ref(isCanvasMode && canvasLaunch.code !== null);
+const canvasAuthMessage = ref(
+  canvasLaunch.code === null
+    ? "This Canvas sign-in link is missing or expired. Reopen Hero Guesser from Copilot."
+    : "Signing in with your GitHub account..."
+);
 const models = ref<ModelOption[]>([]);
 const selectedModel = ref("");
 const sessions = ref<SessionSummary[]>([]);
@@ -484,6 +527,7 @@ interface TranscriptEntry {
 const authTitle = computed(() => authMode.value === "login" ? "Log In" : "Register");
 const authSubmitLabel = computed(() => authMode.value === "login" ? "Log In" : "Create Account");
 const authPasswordAutocomplete = computed(() => authMode.value === "login" ? "current-password" : "new-password");
+const canvasAuthTitle = computed(() => isAuthenticating.value ? "Signing in" : "Canvas sign-in required");
 const ownerLabel = computed(() => `Hero ${authSession.value?.user.heroname ?? ""}`);
 const canStartGame = computed(() => (
   authSession.value !== null &&
@@ -534,6 +578,14 @@ const completionText = computed(() => {
 });
 
 onMounted(async () => {
+  if (isCanvasMode) {
+    if (canvasLaunch.code !== null) {
+      await authenticateCanvas(canvasLaunch.code);
+    }
+
+    return;
+  }
+
   if (authSession.value === null) {
     return;
   }
@@ -557,7 +609,7 @@ async function loadGame(): Promise<void> {
       token,
       user: meResponse.user
     };
-    saveAuth(authSession.value);
+    persistAuth(authSession.value);
 
     const [modelResponse, sessionResponse, leaderboardResponse] = await Promise.all([
       fetchModels(token),
@@ -758,7 +810,7 @@ async function submitAuth(): Promise<void> {
       : await register(authHeroname.value, authPassword.value);
 
     authSession.value = auth;
-    saveAuth(auth);
+    persistAuth(auth);
     authPassword.value = "";
     authPasswordConfirmation.value = "";
     resetGameState();
@@ -782,10 +834,90 @@ function logout(): void {
 }
 
 function clearAuth(message = ""): void {
-  clearSavedAuth();
+  if (!isCanvasMode) {
+    clearSavedAuth();
+  }
+
   authSession.value = null;
-  authErrorMessage.value = message;
+
+  if (isCanvasMode) {
+    canvasAuthMessage.value = message || "Canvas sign-in ended. Reopen Hero Guesser from Copilot.";
+  } else {
+    authErrorMessage.value = message;
+  }
+
   resetGameState();
+}
+
+async function authenticateCanvas(code: string): Promise<void> {
+  const retryDelays = [0, 250, 1_000, 2_000];
+
+  for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+    if (retryDelays[attempt] > 0) {
+      canvasAuthMessage.value = "Canvas sign-in is temporarily unavailable. Retrying automatically...";
+      await wait(retryDelays[attempt]);
+    }
+
+    try {
+      const auth = await exchangeCanvasCode(code);
+      authSession.value = auth;
+      resetGameState();
+      await loadGame();
+      isAuthenticating.value = false;
+      return;
+    } catch (error) {
+      const canRetry = isRetryableCanvasError(error) && attempt < retryDelays.length - 1;
+
+      if (canRetry) {
+        continue;
+      }
+
+      canvasAuthMessage.value = isRetryableCanvasError(error)
+        ? "Canvas sign-in is still unavailable. Reopen Hero Guesser from Copilot."
+        : `${toErrorMessage(error)} Reopen Hero Guesser from Copilot.`;
+      isAuthenticating.value = false;
+      return;
+    }
+  }
+}
+
+function persistAuth(auth: AuthSession): void {
+  if (!isCanvasMode) {
+    saveAuth(auth);
+  }
+}
+
+function isRetryableCanvasError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 429 || error.status >= 500);
+}
+
+function readCanvasLaunch(): CanvasLaunch {
+  const url = new URL(globalThis.location.href);
+
+  if (url.searchParams.get("canvas") !== "1") {
+    return {
+      code: null,
+      enabled: false
+    };
+  }
+
+  const code = new URLSearchParams(url.hash.slice(1)).get("code");
+
+  if (url.hash.length > 0) {
+    url.hash = "";
+    globalThis.history.replaceState(globalThis.history.state, "", url);
+  }
+
+  return {
+    code: code !== null && /^[A-Za-z0-9_-]{43}$/.test(code) ? code : null,
+    enabled: true
+  };
+}
+
+async function wait(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => {
+    globalThis.setTimeout(resolve, milliseconds);
+  });
 }
 
 function resetGameState(): void {

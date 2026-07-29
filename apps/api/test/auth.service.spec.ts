@@ -91,6 +91,48 @@ describe("AuthService", () => {
     })).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it("links a matching local user to GitHub and returns a signed token", async () => {
+    const repository = new FakeAuthRepository();
+    const service = createService(repository);
+
+    await service.register({
+      heroname: "Nullchimp",
+      password: "secret123"
+    });
+
+    const result = await service.loginWithGitHub({
+      id: "12345",
+      login: "Nullchimp",
+      loginKey: "nullchimp"
+    });
+
+    expect(result.user).toEqual({
+      heroname: "Nullchimp",
+      id: "user-1"
+    });
+    expect(repository.users[0]).toMatchObject({
+      githubId: "12345",
+      githubLogin: "Nullchimp"
+    });
+    expect(typeof repository.users[0]?.passwordHash).toBe("string");
+  });
+
+  it("does not permit password login for a GitHub-only user", async () => {
+    const repository = new FakeAuthRepository();
+    const service = createService(repository);
+
+    await service.loginWithGitHub({
+      id: "12345",
+      login: "abc",
+      loginKey: "abc"
+    });
+
+    await expect(service.login({
+      heroname: "abc",
+      password: "secret123"
+    })).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
   it("validates heroname and password rules", async () => {
     const service = createService(new FakeAuthRepository());
 
@@ -133,10 +175,12 @@ class FakeAuthRepository {
   async createUser(input: {
     heroname: string;
     heronameKey: string;
-    passwordHash: string;
+    passwordHash: string | null;
   }): Promise<UserRecord> {
     const user: UserRecord = {
       createdAt: new Date("2026-05-15T12:00:00.000Z"),
+      githubId: null,
+      githubLogin: null,
       heroname: input.heroname,
       heronameKey: input.heronameKey,
       id: `user-${this.users.length + 1}`,
@@ -150,5 +194,43 @@ class FakeAuthRepository {
 
   async getUserByHeronameKey(heronameKey: string): Promise<UserRecord | null> {
     return this.users.find((user) => user.heronameKey === heronameKey) ?? null;
+  }
+
+  async resolveGitHubUser(identity: {
+    id: string;
+    login: string;
+    loginKey: string;
+  }): Promise<UserRecord> {
+    const linked = this.users.find((user) => user.githubId === identity.id);
+
+    if (linked !== undefined) {
+      linked.githubLogin = identity.login;
+      linked.heroname = identity.login;
+      linked.heronameKey = identity.loginKey;
+      return linked;
+    }
+
+    const matching = await this.getUserByHeronameKey(identity.loginKey);
+
+    if (matching !== null) {
+      matching.githubId = identity.id;
+      matching.githubLogin = identity.login;
+      matching.heroname = identity.login;
+      return matching;
+    }
+
+    const user: UserRecord = {
+      createdAt: new Date("2026-05-15T12:00:00.000Z"),
+      githubId: identity.id,
+      githubLogin: identity.login,
+      heroname: identity.login,
+      heronameKey: identity.loginKey,
+      id: `user-${this.users.length + 1}`,
+      passwordHash: null,
+      updatedAt: new Date("2026-05-15T12:00:00.000Z")
+    };
+
+    this.users.push(user);
+    return user;
   }
 }

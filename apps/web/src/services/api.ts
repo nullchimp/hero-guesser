@@ -172,6 +172,17 @@ export async function login(heroname: string, password: string): Promise<AuthSes
   return readJson<AuthSession>(response);
 }
 
+export async function exchangeCanvasCode(code: string): Promise<AuthSession> {
+  const response = await fetch("/api/auth/canvas/exchange", {
+    body: JSON.stringify({
+      code
+    }),
+    headers: unauthenticatedJsonHeaders(),
+    method: "POST"
+  });
+  return readJson<AuthSession>(response);
+}
+
 export async function fetchMe(token: string): Promise<AuthUserResponse> {
   const response = await fetch("/api/auth/me", {
     headers: authHeaders(token)

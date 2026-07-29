@@ -2,9 +2,14 @@ import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/co
 import { JwtService } from "@nestjs/jwt";
 import { Prisma } from "@prisma/client";
 import { AppConfigService } from "../config/app-config.service.js";
-import { AuthRepository, UserRecord } from "./auth.repository.js";
+import {
+  AuthRepository,
+  GitHubIdentityConflictError,
+  UserRecord
+} from "./auth.repository.js";
 import {
   AuthSessionResponse,
+  GitHubIdentity,
   AuthUser,
   JwtPayload
 } from "./auth.types.js";
@@ -63,14 +68,30 @@ export class AuthService {
 
     const user = await this.repository.getUserByHeronameKey(heroname.heronameKey);
 
-    if (user === null || !(await verifyPassword(input.password, user.passwordHash))) {
+    if (
+      user === null ||
+      user.passwordHash === null ||
+      !(await verifyPassword(input.password, user.passwordHash))
+    ) {
       throw new UnauthorizedException("Invalid heroname or password.");
     }
 
     return this.toAuthSession(user);
   }
 
-  private async toAuthSession(user: UserRecord): Promise<AuthSessionResponse> {
+  async loginWithGitHub(identity: GitHubIdentity): Promise<AuthSessionResponse> {
+    try {
+      return this.toAuthSession(await this.repository.resolveGitHubUser(identity));
+    } catch (error) {
+      if (error instanceof GitHubIdentityConflictError) {
+        throw new ConflictException(error.message);
+      }
+
+      throw error;
+    }
+  }
+
+  async toAuthSession(user: UserRecord): Promise<AuthSessionResponse> {
     const authUser = toAuthUser(user);
     const payload: JwtPayload = {
       heroname: authUser.heroname,

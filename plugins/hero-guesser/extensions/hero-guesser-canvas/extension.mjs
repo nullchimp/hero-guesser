@@ -2,6 +2,7 @@ import { createCanvas, joinSession } from "@github/copilot-sdk/extension";
 import {
     APP_URL,
     closeServer,
+    prepareCanvasLaunch,
     probeHeroGuesser,
     startSetupServer,
 } from "./canvas-server.mjs";
@@ -55,14 +56,14 @@ await joinSession({
                 },
             ],
             open: async (ctx) => {
-                const status = await probeHeroGuesser();
+                const status = await prepareCanvasLaunch();
 
                 if (status.available) {
                     await closeInstance(ctx.instanceId);
                     return {
                         status: "Ready",
                         title: "Hero Guesser",
-                        url: APP_URL,
+                        url: status.appUrl,
                     };
                 }
 

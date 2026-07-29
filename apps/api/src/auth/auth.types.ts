@@ -24,3 +24,9 @@ export interface AuthUserResponse {
 export interface AuthenticatedRequest extends Request {
   user?: AuthUser;
 }
+
+export interface GitHubIdentity {
+  id: string;
+  login: string;
+  loginKey: string;
+}
