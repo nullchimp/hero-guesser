@@ -1,0 +1,149 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import {
+    APP_URL,
+    HEALTH_URL,
+    closeServer,
+    probeHeroGuesser,
+    renderSetupPage,
+    startSetupServer,
+} from "./canvas-server.mjs";
+
+test("uses the documented localhost app origin and proxied API health endpoint", () => {
+    assert.equal(APP_URL, "http://localhost:8080/");
+    assert.equal(HEALTH_URL, "http://localhost:8080/api/models");
+});
+
+test("treats an unauthenticated API response as an available stack", async () => {
+    const result = await probeHeroGuesser({
+        fetchImpl: async () => new Response(null, { status: 401 }),
+    });
+
+    assert.deepEqual(result, {
+        available: true,
+        reason: "The Hero Guesser stack is ready and waiting for login.",
+        status: 401,
+    });
+});
+
+test("treats gateway failures as an unavailable API", async () => {
+    const result = await probeHeroGuesser({
+        fetchImpl: async () => new Response(null, { status: 502 }),
+    });
+
+    assert.deepEqual(result, {
+        available: false,
+        reason: "The web proxy returned HTTP 502 while waiting for the API.",
+        status: 502,
+    });
+});
+
+test("treats connection failures as unavailable without exposing error details", async () => {
+    const result = await probeHeroGuesser({
+        fetchImpl: async () => {
+            throw new Error("private network details");
+        },
+    });
+
+    assert.deepEqual(result, {
+        available: false,
+        reason: "The Hero Guesser stack is not reachable at http://localhost:8080.",
+        status: null,
+    });
+});
+
+test("aborts a health check that exceeds its timeout", async () => {
+    const result = await probeHeroGuesser({
+        fetchImpl: async (_url, { signal }) => new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => {
+                const error = new Error("aborted");
+                error.name = "AbortError";
+                reject(error);
+            });
+        }),
+        timeoutMs: 5,
+    });
+
+    assert.equal(result.available, false);
+    assert.match(result.reason, /timed out/);
+});
+
+test("renders actionable setup instructions without credentials", () => {
+    const html = renderSetupPage();
+
+    assert.match(html, /COPILOT_GITHUB_TOKEN/);
+    assert.match(html, /docker compose up --build/);
+    assert.match(html, /window\.location\.replace\(result\.appUrl\)/);
+    assert.doesNotMatch(html, /github_pat_|ghp_/);
+});
+
+test("serves setup and same-origin status endpoints", async () => {
+    const entry = await startSetupServer(async () => ({
+        available: true,
+        reason: "Ready.",
+        status: 401,
+    }));
+
+    try {
+        const pageResponse = await fetch(entry.url);
+        const page = await pageResponse.text();
+        const statusResponse = await fetch(new URL("/status", entry.url));
+        const status = await statusResponse.json();
+
+        assert.equal(pageResponse.status, 200);
+        assert.match(page, /Hero Guesser is not running yet/);
+        assert.match(pageResponse.headers.get("content-security-policy") ?? "", /connect-src 'self'/);
+        assert.equal(statusResponse.headers.get("cache-control"), "no-store");
+        assert.deepEqual(status, {
+            appUrl: APP_URL,
+            available: true,
+            reason: "Ready.",
+            status: 401,
+        });
+    } finally {
+        await closeServer(entry.server);
+    }
+});
+
+test("plugin and marketplace manifests register one direct canvas extension", async () => {
+    const [plugin, marketplace, extension] = await Promise.all([
+        readJson(new URL("../../.github/plugin/plugin.json", import.meta.url)),
+        readJson(new URL("../../../../.github/plugin/marketplace.json", import.meta.url)),
+        readJson(new URL("./copilot-extension.json", import.meta.url)),
+    ]);
+
+    assert.equal(plugin.name, "hero-guesser");
+    assert.equal(plugin.extensions, "extensions");
+    assert.equal(marketplace.name, "hero-guesser");
+    assert.equal(marketplace.plugins.length, 1);
+    assert.equal(marketplace.plugins[0].name, "hero-guesser");
+    assert.equal(marketplace.plugins[0].source, "plugins/hero-guesser");
+    assert.deepEqual(extension, {
+        name: "hero-guesser-canvas",
+        version: 1,
+    });
+});
+
+test("README provides encoded app links and CLI installation fallbacks", async () => {
+    const readme = await readFile(new URL("../../../../README.md", import.meta.url), "utf8");
+    const addMarketplaceLink = "https://github.com/copilot/app/launch?open=ghapp%3A%2F%2Fplugins%2Fmarketplace%2Fadd%3Fsource%3Dnullchimp%252Fhero-guesser";
+    const installPluginLink = "https://github.com/copilot/app/launch?open=ghapp%3A%2F%2Fplugins%2Finstall%3Fsource%3Dhero-guesser%2540hero-guesser";
+
+    assert.ok(readme.includes(addMarketplaceLink));
+    assert.ok(readme.includes(installPluginLink));
+    assert.match(readme, /copilot plugin marketplace add nullchimp\/hero-guesser/);
+    assert.match(readme, /copilot plugin install hero-guesser@hero-guesser/);
+    assert.equal(
+        new URL(addMarketplaceLink).searchParams.get("open"),
+        "ghapp://plugins/marketplace/add?source=nullchimp%2Fhero-guesser",
+    );
+    assert.equal(
+        new URL(installPluginLink).searchParams.get("open"),
+        "ghapp://plugins/install?source=hero-guesser%40hero-guesser",
+    );
+});
+
+async function readJson(url) {
+    return JSON.parse(await readFile(url, "utf8"));
+}

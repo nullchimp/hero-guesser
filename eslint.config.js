@@ -45,6 +45,28 @@ export default tseslint.config(
     }
   },
   {
+    files: [
+      "plugins/**/*.mjs"
+    ],
+    extends: [
+      tseslint.configs.disableTypeChecked
+    ],
+    languageOptions: {
+      globals: {
+        AbortController: "readonly",
+        Response: "readonly",
+        URL: "readonly",
+        clearTimeout: "readonly",
+        fetch: "readonly",
+        process: "readonly",
+        setTimeout: "readonly"
+      },
+      parserOptions: {
+        projectService: false
+      }
+    }
+  },
+  {
     ignores: [
       "dist/**",
       "coverage/**",
