@@ -24,7 +24,7 @@
 - `4` clean, modular, tested
 - `5` excellent, production-minded
 
-**Score:** ___ × 3 = **___**
+**Score:** ___ × 2 = **___**
 
 ### ✨ Usability and Interface — _×2_
 - `1` confusing
@@ -53,6 +53,8 @@ Techniques: [ ] Skills [ ] Custom agents [ ] Plan mode [ ] Research mode [ ] MCP
 - `3` improves gameplay
 - `4` robust & creative
 - `5` central to the experience
+---
+- `+3` extra points if game runs as a Canvas
 
 **Score:** ___ × 1 = **___**
 
@@ -63,11 +65,11 @@ Techniques: [ ] Skills [ ] Custom agents [ ] Plan mode [ ] Research mode [ ] MCP
 | Category | Weight | Score | Points |
 |----------|:------:|:-----:|:------:|
 | 🧩 Game Logic / Creativity | 3 | | |
-| 📝 Code and Architecture   | 3 | | |
+| 📝 Code and Architecture   | 2 | | |
 | ✨ Usability and Interface | 2 | | |
-| ⚙️ Agentic Process         | 1 | | |
+| ⚙️ Agentic Process         | 3 | | |
 | 🤖 Copilot in Game _(bonus)_ | 1 | | |
-| **TOTAL** | | | **___ / 50** |
+| **TOTAL** | | | **___ / 58** |
 
 **Tie-breaker:** 🧩 → 📝 → ✨ → ⚙️ → 🤖
 
