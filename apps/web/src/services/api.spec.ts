@@ -2,6 +2,7 @@ import {
   AuthSession,
   clearSavedAuth,
   createSession,
+  exchangeCanvasCode,
   fetchMe,
   getSavedAuth,
   saveAuth
@@ -74,6 +75,24 @@ describe("api service", () => {
       headers: {
         Authorization: "Bearer token-1"
       }
+    });
+  });
+
+  it("exchanges a Canvas bootstrap code without an app token", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue(jsonResponse(authSession()));
+    const code = "a".repeat(43);
+
+    await exchangeCanvasCode(code);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/canvas/exchange", {
+      body: JSON.stringify({
+        code
+      }),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
     });
   });
 });

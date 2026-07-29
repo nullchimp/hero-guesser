@@ -2,8 +2,10 @@ import { createServer } from "node:http";
 
 export const APP_URL = "http://localhost:8080/";
 export const HEALTH_URL = new URL("/api/models", APP_URL).href;
+export const BOOTSTRAP_URL = "http://127.0.0.1:3000/api/auth/canvas/bootstrap";
 
 const DEFAULT_TIMEOUT_MS = 3_000;
+const BOOTSTRAP_TIMEOUT_MS = 8_000;
 const GATEWAY_FAILURE_STATUSES = new Set([502, 503, 504]);
 
 export async function probeHeroGuesser({
@@ -52,7 +54,79 @@ export async function probeHeroGuesser({
     }
 }
 
-export async function startSetupServer(probe = probeHeroGuesser) {
+export async function prepareCanvasLaunch({
+    bootstrapTimeoutMs = BOOTSTRAP_TIMEOUT_MS,
+    fetchImpl = globalThis.fetch,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+} = {}) {
+    const status = await probeHeroGuesser({
+        fetchImpl,
+        timeoutMs,
+    });
+
+    if (!status.available) {
+        return {
+            ...status,
+            retryable: true,
+        };
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), bootstrapTimeoutMs);
+
+    try {
+        const response = await fetchImpl(BOOTSTRAP_URL, {
+            headers: {
+                Accept: "application/json",
+            },
+            method: "POST",
+            redirect: "manual",
+            signal: controller.signal,
+        });
+        const body = await readJson(response);
+
+        if (!response.ok) {
+            return {
+                available: false,
+                reason: readErrorMessage(body, response.status),
+                retryable: readRetryable(body, response.status),
+                status: response.status,
+            };
+        }
+
+        if (!isBootstrapResponse(body)) {
+            return {
+                available: false,
+                reason: "The Hero Guesser API returned an invalid Canvas sign-in response.",
+                retryable: false,
+                status: response.status,
+            };
+        }
+
+        return {
+            appUrl: createCanvasAppUrl(body.code),
+            available: true,
+            reason: "Hero Guesser is ready.",
+            retryable: false,
+            status: response.status,
+        };
+    } catch (error) {
+        const timedOut = error instanceof Error && error.name === "AbortError";
+
+        return {
+            available: false,
+            reason: timedOut
+                ? "Canvas sign-in did not respond in time. Retrying automatically."
+                : "Canvas sign-in is not reachable. Retrying automatically.",
+            retryable: true,
+            status: null,
+        };
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+export async function startSetupServer(prepare = prepareCanvasLaunch) {
     const server = createServer(async (request, response) => {
         setSecurityHeaders(response);
 
@@ -63,13 +137,10 @@ export async function startSetupServer(probe = probeHeroGuesser) {
         }
 
         if (request.method === "GET" && request.url === "/status") {
-            const status = await probe();
+            const status = await prepare();
             response.setHeader("Cache-Control", "no-store");
             response.setHeader("Content-Type", "application/json; charset=utf-8");
-            response.end(JSON.stringify({
-                ...status,
-                appUrl: APP_URL,
-            }));
+            response.end(JSON.stringify(status));
             return;
         }
 
@@ -175,21 +246,6 @@ export function renderSetupPage() {
         color: var(--color-white, #fff);
         border-radius: 6px;
       }
-      button {
-        min-height: 42px;
-        padding: 8px 16px;
-        color: #fff;
-        background: var(--true-color-red, #b21e2b);
-        border: 2px solid var(--border-color-default, #0a0a0a);
-        border-radius: 4px;
-        font: inherit;
-        font-weight: var(--font-weight-semibold, 600);
-        cursor: pointer;
-      }
-      button:disabled {
-        cursor: wait;
-        opacity: 0.65;
-      }
       #status {
         min-height: 24px;
         color: var(--text-color-muted, #5b5b5b);
@@ -198,9 +254,9 @@ export function renderSetupPage() {
   </head>
   <body>
     <main>
-      <p class="eyebrow">Local stack required</p>
-      <h1>Hero Guesser is not running yet</h1>
-      <p>The canvas uses the complete Hero Guesser web app and its Docker services.</p>
+      <p class="eyebrow">Preparing Canvas</p>
+      <h1>Hero Guesser is getting ready</h1>
+      <p>The Canvas is checking the local Docker stack and signing in with your configured GitHub account automatically.</p>
       <ol>
         <li>Clone <code>github.com/nullchimp/hero-guesser</code>.</li>
         <li>Copy <code>.env.example</code> to <code>.env</code>.</li>
@@ -209,24 +265,21 @@ export function renderSetupPage() {
       </ol>
       <pre><code>docker compose up --build</code></pre>
       <p id="status" role="status">Waiting for http://localhost:8080...</p>
-      <button id="retry" type="button">Check again</button>
     </main>
     <script>
-      const button = document.querySelector("#retry");
       const statusLine = document.querySelector("#status");
       let checking = false;
 
       async function checkConnection() {
         if (checking) return;
         checking = true;
-        button.disabled = true;
-        statusLine.textContent = "Checking the local Hero Guesser stack...";
+        statusLine.textContent = "Checking the local stack and GitHub identity...";
 
         try {
           const response = await fetch("/status", { cache: "no-store" });
           const result = await response.json();
 
-          if (result.available) {
+          if (result.available && typeof result.appUrl === "string") {
             statusLine.textContent = "Hero Guesser is ready. Opening the game...";
             window.location.replace(result.appUrl);
             return;
@@ -237,15 +290,60 @@ export function renderSetupPage() {
           statusLine.textContent = "The canvas could not check the local stack. Try again.";
         } finally {
           checking = false;
-          button.disabled = false;
         }
       }
 
-      button.addEventListener("click", checkConnection);
+      checkConnection();
       setInterval(checkConnection, 4000);
     </script>
   </body>
 </html>`;
+}
+
+function createCanvasAppUrl(code) {
+    const url = new URL(APP_URL);
+    url.searchParams.set("canvas", "1");
+    url.hash = `code=${code}`;
+    return url.href;
+}
+
+async function readJson(response) {
+    try {
+        return await response.json();
+    } catch {
+        return null;
+    }
+}
+
+function isBootstrapResponse(value) {
+    return typeof value === "object" &&
+        value !== null &&
+        typeof value.code === "string" &&
+        /^[A-Za-z0-9_-]{43}$/.test(value.code);
+}
+
+function readErrorMessage(body, status) {
+    if (
+        typeof body === "object" &&
+        body !== null &&
+        typeof body.message === "string"
+    ) {
+        return body.message;
+    }
+
+    return `Canvas sign-in returned HTTP ${status}.`;
+}
+
+function readRetryable(body, status) {
+    if (
+        typeof body === "object" &&
+        body !== null &&
+        typeof body.retryable === "boolean"
+    ) {
+        return body.retryable;
+    }
+
+    return status === 429 || status >= 500;
 }
 
 function setSecurityHeaders(response) {

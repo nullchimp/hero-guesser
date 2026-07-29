@@ -43,7 +43,7 @@ docker compose exec api npm run prisma:migrate -w @hero-guesser/api
 
 ## GitHub Copilot App Canvas
 
-Hero Guesser can open in the GitHub Copilot App's canvas panel while using the same local web app, account, saved sessions, and leaderboard.
+Hero Guesser can open in the GitHub Copilot App's canvas panel while using the same local web app, account, saved sessions, and leaderboard. Canvas launches sign in automatically with the GitHub account that owns `COPILOT_GITHUB_TOKEN`; no heroname or password form is shown.
 
 [![Add Hero Guesser marketplace](https://img.shields.io/badge/Add_marketplace-GitHub_Copilot_App-0969da?style=for-the-badge)](https://github.com/copilot/app/launch?open=ghapp%3A%2F%2Fplugins%2Fmarketplace%2Fadd%3Fsource%3Dnullchimp%252Fhero-guesser)
 [![Install Hero Guesser](https://img.shields.io/badge/Install-Hero_Guesser-1f883d?style=for-the-badge)](https://github.com/copilot/app/launch?open=ghapp%3A%2F%2Fplugins%2Finstall%3Fsource%3Dhero-guesser%2540hero-guesser)
@@ -60,9 +60,11 @@ copilot plugin marketplace add nullchimp/hero-guesser
 copilot plugin install hero-guesser@hero-guesser
 ```
 
-The canvas checks `http://localhost:8080/api/models` before opening the game. If the stack is unavailable, it shows the required setup steps and retries automatically. If Docker stops after the game opens, restart it with `docker compose up --build`, then ask Copilot to check the Hero Guesser connection or reopen the canvas.
+The canvas checks `http://localhost:8080/api/models` before opening the game. When the stack is ready, the extension requests a short-lived sign-in handoff from the API's loopback-only port and opens the game as the configured GitHub user. If the stack or GitHub API is temporarily unavailable, the Canvas keeps retrying automatically. If Docker stops after the game opens, restart it with `docker compose up --build`, then reopen the Canvas.
 
-> **First run:** copy `.env.example` to `.env` and set `COPILOT_GITHUB_TOKEN` before starting Docker. The extension never starts Docker, reads the token, or stores application credentials.
+> **First run:** copy `.env.example` to `.env` and set `COPILOT_GITHUB_TOKEN` before starting Docker. The extension never reads or stores that token. The API resolves the token owner's GitHub username server-side and gives the Canvas a short-lived exchange code instead.
+
+If the GitHub username case-insensitively matches an existing local heroname, Canvas links that local account so its saved case files remain available. This behavior assumes a trusted, single-user local installation. Other local processes are outside the authentication boundary and should not be treated as untrusted tenants.
 
 For canvas and plugin behavior, see [Working with canvas extensions](https://docs.github.com/en/copilot/how-tos/github-copilot-app/working-with-canvas-extensions) and [Opening the GitHub Copilot App with deep links](https://docs.github.com/en/copilot/how-tos/github-copilot-app/open-with-deep-links).
 
@@ -81,7 +83,7 @@ For canvas and plugin behavior, see [Working with canvas extensions](https://doc
 
 ## Gameplay
 
-- Register or log in with a heroname before playing.
+- Register or log in with a heroname before playing in a normal browser. Copilot Canvas launches use the configured GitHub account automatically.
 - Start a new session, think of a hero or villain, and answer the model's questions with only Yes, No, or Unknown.
 - Each model gets up to 10 questions. Guesses do not consume the question budget.
 - A guess is shown with a specific English Wikipedia article, summary, and lead image when the app can verify a character-specific page.

@@ -6,6 +6,8 @@ import { PrismaModule } from "../prisma/prisma.module.js";
 import { AuthController } from "./auth.controller.js";
 import { AuthRepository } from "./auth.repository.js";
 import { AuthService } from "./auth.service.js";
+import { CanvasAuthService } from "./canvas-auth.service.js";
+import { GitHubIdentityService } from "./github-identity.service.js";
 import { JwtAuthGuard } from "./jwt-auth.guard.js";
 
 @Module({
@@ -33,6 +35,8 @@ import { JwtAuthGuard } from "./jwt-auth.guard.js";
   providers: [
     AuthRepository,
     AuthService,
+    CanvasAuthService,
+    GitHubIdentityService,
     JwtAuthGuard
   ],
   exports: [

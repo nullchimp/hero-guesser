@@ -34,7 +34,7 @@ services:
       PORT: 3000
       WIKIPEDIA_USER_AGENT: ${WIKIPEDIA_USER_AGENT:-HeroGuesser/0.1 (https://github.com/nullchimp/hero-guesser)}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - hero-guesser-copilot-home:/var/lib/copilot-home
 
